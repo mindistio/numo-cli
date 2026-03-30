@@ -13,6 +13,28 @@
 
 ## Install
 
+**Standalone binary (no Node.js required):**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/mindistio/numo-cli/main/install.sh | bash
+```
+
+This downloads the latest release for your platform (macOS/Linux, x64/arm64), verifies checksums, and adds `numo` to your PATH.
+
+To install a specific version:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/mindistio/numo-cli/main/install.sh | bash -s -- v1.0.0
+```
+
+Custom install directory:
+
+```bash
+NUMO_INSTALL=/usr/local/bin curl -fsSL https://raw.githubusercontent.com/mindistio/numo-cli/main/install.sh | bash
+```
+
+**Via npm:**
+
 ```bash
 npm install -g numo-cli
 ```
@@ -100,4 +122,3 @@ numo tasks list --json | jq '.pendingCount'
 ## License
 
 MIT
-# numo-cli
