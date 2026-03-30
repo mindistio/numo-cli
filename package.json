@@ -1,0 +1,59 @@
+{
+  "name": "numo-cli",
+  "version": "1.0.0",
+  "description": "CLI for Numo — the ADHD planner app",
+  "type": "module",
+  "bin": {
+    "numo": "./dist/cli.cjs"
+  },
+  "files": [
+    "dist/cli.cjs"
+  ],
+  "scripts": {
+    "build": "npm run build:cli",
+    "build:cli": "node build.mjs",
+    "dev": "tsx src/cli/cli.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "npm run typecheck && npm run build"
+  },
+  "keywords": [
+    "numo",
+    "adhd",
+    "planner",
+    "cli",
+    "tasks",
+    "productivity"
+  ],
+  "author": "Numo <vital@numo.ai>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mindistio/numo-cli.git"
+  },
+  "homepage": "https://github.com/mindistio/numo-cli#readme",
+  "bugs": {
+    "url": "https://github.com/mindistio/numo-cli/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@clack/prompts": "^1.1.0",
+    "chrono-node": "^2.9.0",
+    "commander": "^12.0.0",
+    "open": "^10.1.0",
+    "picocolors": "^1.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "esbuild": "^0.25.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.4.0",
+    "vitest": "^4.1.1"
+  }
+}

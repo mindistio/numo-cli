@@ -1,0 +1,76 @@
+name: Release Please
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          release-type: node
+
+  publish:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: 'https://registry.npmjs.org'
+          cache: 'npm'
+      - run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Test
+        run: npm test
+      - run: npm publish --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NUMO_FIREBASE_API_KEY: ${{ secrets.NUMO_FIREBASE_API_KEY }}
+          NUMO_FIREBASE_PROJECT_ID: ${{ secrets.NUMO_FIREBASE_PROJECT_ID }}
+          NUMO_FIREBASE_APP_ID: ${{ secrets.NUMO_FIREBASE_APP_ID }}
+          NUMO_ADMIN_UIDS: ${{ secrets.NUMO_ADMIN_UIDS }}
+
+  build-binaries:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+      - uses: oven-sh/setup-bun@v2
+      - run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Test
+        run: npm test
+      - run: npm run build
+        env:
+          NUMO_FIREBASE_API_KEY: ${{ secrets.NUMO_FIREBASE_API_KEY }}
+          NUMO_FIREBASE_PROJECT_ID: ${{ secrets.NUMO_FIREBASE_PROJECT_ID }}
+          NUMO_FIREBASE_APP_ID: ${{ secrets.NUMO_FIREBASE_APP_ID }}
+          NUMO_ADMIN_UIDS: ${{ secrets.NUMO_ADMIN_UIDS }}
+      - run: bash scripts/build-binaries.sh
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.release-please.outputs.tag_name }}
+          files: dist/release/*
