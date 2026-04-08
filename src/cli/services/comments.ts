@@ -1,6 +1,7 @@
-import { MAX_COMMENTS_PER_REQUEST } from '../../shared';
+import { MAX_COMMENTS_PER_REQUEST, KARMA_POINTS } from '../../shared';
 import { getDoc, createDoc, deleteDoc, runQuery } from '../lib/firestore';
 import { validateDocId, checkOwnership, incrementField } from '../lib/validation';
+import { giveKarma } from '../lib/karma';
 
 export async function listComments(postId: string, opts: { cursor?: string; limit?: number }): Promise<{ comments: Record<string, unknown>[]; nextCursor?: string }> {
   validateDocId(postId, 'Post ID');
@@ -50,15 +51,25 @@ export async function createComment(uid: string, postId: string, text: string): 
     text,
     createdAt: now,
     updatedAt: now,
+    textLength: text.length,
     likes: [],
     repliesCount: 0,
   };
 
   const doc = await createDoc(`posts/${postId}/comments`, commentData);
+  const commentId = doc.id as string;
 
   await incrementField(`posts/${postId}`, 'commentsCount', 1);
 
-  return { comment: doc };
+  try {
+    await giveKarma(uid, 'addComment', `${postId}_${commentId}`, KARMA_POINTS.addComment, text);
+  } catch { /* non-critical */ }
+
+  try {
+    await incrementField(`users/${uid}/activity/totals`, 'comments.written', 1);
+  } catch { /* non-critical */ }
+
+  return { comment: doc, karma: KARMA_POINTS.addComment };
 }
 
 export async function deleteComment(uid: string, postId: string, commentId: string): Promise<void> {

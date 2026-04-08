@@ -1,13 +1,14 @@
 {
   "name": "numo-cli",
   "version": "1.0.0",
-  "description": "CLI for Numo — the ADHD planner app",
+  "description": "CLI and programmatic API for Numo ADHD planner — create, complete, and manage tasks from the terminal or AI agents",
   "type": "module",
   "bin": {
     "numo": "./dist/cli.cjs"
   },
   "files": [
-    "dist/cli.cjs"
+    "dist/cli.cjs",
+    "LICENSE"
   ],
   "scripts": {
     "build": "npm run build:cli",
@@ -24,7 +25,12 @@
     "planner",
     "cli",
     "tasks",
-    "productivity"
+    "productivity",
+    "ai-agent",
+    "automation",
+    "task-management",
+    "todo",
+    "api"
   ],
   "author": "Numo <vital@numo.ai>",
   "license": "MIT",

@@ -90,8 +90,9 @@ export async function setDoc(docPath: string, data: Record<string, unknown>): Pr
 
 export async function updateDoc(path: string, data: Record<string, unknown>, fieldMask: string[]): Promise<Record<string, unknown>> {
   const url = `${getFirestoreBaseUrl()}/${path}`;
-  const params = fieldMask.map((f) => `updateMask.fieldPaths=${f}`).join('&');
-  const resp = await http.patch(`${url}?${params}`, { fields: toFirestoreFields(data) }, { headers: await authHeaders() });
+  const qs = new URLSearchParams();
+  for (const f of fieldMask) qs.append('updateMask.fieldPaths', f);
+  const resp = await http.patch(`${url}?${qs}`, { fields: toFirestoreFields(data) }, { headers: await authHeaders() });
   return fromFirestoreDoc(resp.data);
 }
 

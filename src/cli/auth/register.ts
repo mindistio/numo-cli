@@ -9,8 +9,6 @@ import { isInteractive } from '../lib/tty';
 import type { AuthResult } from './login';
 import { printSuccess } from './login';
 
-const SIGNUP_KARMA_POINTS = 5;
-
 // ── Pure helpers ────────────────────────────────────────────────────
 
 export function validateEmail(email: string): string {
@@ -133,22 +131,6 @@ async function setupUserProfile(uid: string, email: string): Promise<void> {
       type: 'transform',
       path: 'appLinks/users',
       transforms: [{ field: 'count', increment: 1 }],
-    },
-    {
-      type: 'update',
-      path: `users/${uid}/karma/signUp`,
-      data: {
-        userId: uid,
-        entity: 'signUp',
-        entityId: 'signUp',
-        karma: SIGNUP_KARMA_POINTS,
-        createdAt: now,
-      },
-    },
-    {
-      type: 'transform',
-      path: `users/${uid}`,
-      transforms: [{ field: 'karmaCount', increment: SIGNUP_KARMA_POINTS }],
     },
   ]);
 }

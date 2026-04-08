@@ -1,8 +1,9 @@
 import * as crypto from 'crypto';
-import { ITask, IKarmaRecord, IRoutineStreak, WeekDay, MAX_TASKS_PER_REQUEST, KARMA_POINTS, DIFFICULTY_BONUS, MAX_KARMA_PER_COMPLETE } from '../../shared';
+import { ITask, IRoutineStreak, WeekDay, MAX_TASKS_PER_REQUEST, KARMA_POINTS, DIFFICULTY_BONUS, MAX_KARMA_PER_COMPLETE } from '../../shared';
 import { getDoc, setDoc, updateDoc, deleteDoc, runQuery, commit, CommitWrite } from '../lib/firestore';
 import { recordDailyStreak, revertDailyStreak, removeDailyStreak } from '../lib/streaks';
-import { validateDocId } from '../lib/validation';
+import { validateDocId, incrementField } from '../lib/validation';
+import { giveKarma, removeKarma } from '../lib/karma';
 
 // ── Date helpers ──────────────────────────────────────────────────────
 
@@ -198,10 +199,6 @@ function taskHistoryPath(uid: string, id: string): string {
   return `users/${uid}/tasksHistory/${id}`;
 }
 
-function karmaPath(uid: string, id: string): string {
-  return `users/${uid}/karma/${id}`;
-}
-
 function orderingPath(uid: string): string {
   return `users/${uid}/order/tasks`;
 }
@@ -215,32 +212,48 @@ function routineStreakPath(uid: string, taskId: string): string {
 }
 
 function archivePath(uid: string, taskId: string): string {
-  return `users/${uid}/archive/${taskId}`;
+  return `archive/${uid}/tasks/${taskId}`;
+}
+
+function archiveCounterPath(uid: string): string {
+  return `archive/${uid}`;
+}
+
+function activityTotalsPath(uid: string): string {
+  return `users/${uid}/activity/totals`;
 }
 
 // ── ID Generation ────────────────────────────────────────────────────
 
-function generateTaskId(uid: string, task: Record<string, unknown>): string {
+function reversedTimestamp(len: number): string {
+  const maxTs = 9999999999999; // 13-digit max timestamp
+  const reversed = String(maxTs - Date.now());
+  return reversed.slice(0, len);
+}
+
+function randomAlphanumeric(len: number): string {
+  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  const limit = 252; // 252 = 36 * 7 → largest multiple of 36 that fits in a byte, eliminates modulo bias
+  let result = '';
+  while (result.length < len) {
+    const bytes = crypto.randomBytes(len - result.length);
+    for (let i = 0; i < bytes.length && result.length < len; i++) {
+      if (bytes[i] < limit) result += chars[bytes[i] % chars.length];
+    }
+  }
+  return result;
+}
+
+function generateTaskId(task: Record<string, unknown>): string {
   const repeatType = (task.repeat as any)?.type === 'none' ? 'simple' : (task.repeat as any)?.type;
-  const hash = crypto.createHash('sha256')
-    .update(uid + ':' + JSON.stringify({ text: task.text, dueDate: task.dueDate, tags: task.tags }))
-    .digest('hex')
-    .slice(0, 16);
-  return `${repeatType}_${hash}`;
+  const textSlug = String(task.text ?? '').slice(0, 8).toLowerCase().replace(/[^a-z0-9]/g, '-');
+  const uniquePart = reversedTimestamp(8) + randomAlphanumeric(7);
+  if (!task.dueDate) return `${repeatType}_${textSlug}_${uniquePart}`;
+  const dateSlug = String(task.dueDate).replace(/[^a-z0-9]/g, '-');
+  return `${repeatType}_${textSlug}_${dateSlug}_${uniquePart}`;
 }
 
 // ── Side-effect helpers ──────────────────────────────────────────────
-
-async function giveKarma(uid: string, entity: string, entityId: string, karma: number, text: string): Promise<void> {
-  const id = `${entity}_${entityId}`;
-  const record: IKarmaRecord = { entity, entityId, karma, text, createdAt: Date.now(), userId: uid };
-  await setDoc(karmaPath(uid, id), record as unknown as Record<string, unknown>);
-}
-
-async function removeKarma(uid: string, entity: string, entityId: string): Promise<void> {
-  const id = `${entity}_${entityId}`;
-  try { await deleteDoc(karmaPath(uid, id)); } catch { /* not-found is expected */ }
-}
 
 /** Log non-critical side-effect failures to stderr for observability. */
 function logSideEffectResults(label: string, results: PromiseSettledResult<unknown>[]): void {
@@ -263,7 +276,7 @@ async function addToOrdering(uid: string, taskId: string, position: 'start' | 'e
     if (position === 'start') ordering.unshift(taskId);
     else ordering.push(taskId);
   }
-  await setDoc(orderingPath(uid), { tasksListOrdering: ordering });
+  await updateDoc(orderingPath(uid), { tasksListOrdering: ordering }, ['tasksListOrdering']);
 }
 
 async function removeFromOrdering(uid: string, taskId: string): Promise<void> {
@@ -271,7 +284,7 @@ async function removeFromOrdering(uid: string, taskId: string): Promise<void> {
     const doc = await getDoc(orderingPath(uid));
     if (Array.isArray(doc.tasksListOrdering)) {
       const ordering = (doc.tasksListOrdering as string[]).filter((id) => id !== taskId);
-      await setDoc(orderingPath(uid), { tasksListOrdering: ordering });
+      await updateDoc(orderingPath(uid), { tasksListOrdering: ordering }, ['tasksListOrdering']);
     }
   } catch { /* doc may not exist */ }
 }
@@ -415,18 +428,20 @@ export async function createTask(uid: string, body: Record<string, unknown>): Pr
     completions: 0,
     repeat: body.repeat ?? { type: 'none', every: null, end: null, endDate: null, endAfter: null, monthDays: null, weekDays: null },
     subtasks: Array.isArray(body.subtasks) ? body.subtasks.map((s: any) => ({ id: crypto.randomUUID(), text: s.text, completed: false })) : [],
+    withTime: dueDate != null && !/\b00:00$/.test(dueDate),
+    listPosition: null,
   };
 
   taskData.remindDate = getTaskRemindDate(taskData as any);
 
-  // Generate deterministic ID instead of Firestore auto-ID
-  const taskId = generateTaskId(uid, taskData);
+  const taskId = generateTaskId(taskData);
   const doc = await setDoc(taskPath(uid, taskId), taskData);
 
-  // Side effects: karma + ordering (fire-and-forget style, don't block on errors)
+  // Side effects: karma + ordering + activity (fire-and-forget style, don't block on errors)
   const createResults = await Promise.allSettled([
     giveKarma(uid, 'addTask', taskId, KARMA_POINTS.addTask, String(taskData.text)),
     addToOrdering(uid, taskId, 'end'),
+    incrementField(activityTotalsPath(uid), 'tasks.active', 1),
   ]);
   logSideEffectResults('createTask', createResults);
 
@@ -481,7 +496,7 @@ export async function deleteTask(uid: string, id: string): Promise<Record<string
 
   const hasData = Object.keys(taskData).length > 0;
 
-  // ATOMIC: delete task + create archive (if we have data to archive)
+  // ATOMIC: delete task + create archive + increment counter (if we have data to archive)
   const writes: CommitWrite[] = [
     { type: 'delete', path: taskPath(uid, id) },
   ];
@@ -490,6 +505,11 @@ export async function deleteTask(uid: string, id: string): Promise<Record<string
       type: 'update',
       path: archivePath(uid, id),
       data: { ...taskData, archived: true, archivedAt: Date.now() },
+    });
+    writes.push({
+      type: 'transform',
+      path: archiveCounterPath(uid),
+      transforms: [{ field: 'archivedTasksCount', increment: 1 }],
     });
   }
   await commit(writes);
@@ -510,6 +530,7 @@ export async function deleteTask(uid: string, id: string): Promise<Record<string
   const deleteResults = await Promise.allSettled([
     removeFromOrdering(uid, id),
     deleteRoutineStreak(uid, id),
+    incrementField(activityTotalsPath(uid), 'tasks.active', -1),
   ]);
   logSideEffectResults('deleteTask', deleteResults);
   removeDailyStreak(id);
@@ -586,12 +607,14 @@ export async function completeTask(uid: string, id: string, date?: string): Prom
   const sideEffects: Promise<unknown>[] = [
     giveKarma(uid, 'completeTask', entityId, karmaPoints, task.text),
     addToProgress(uid, id, completeDateStr),
+    incrementField(activityTotalsPath(uid), 'tasks.completed', 1),
   ];
 
   if (repeating) {
     sideEffects.push(recordRoutineStreak(uid, id));
   } else {
     sideEffects.push(removeFromOrdering(uid, id));
+    sideEffects.push(incrementField(activityTotalsPath(uid), 'tasks.active', -1));
   }
 
   const completeResults = await Promise.allSettled(sideEffects);
@@ -645,12 +668,14 @@ export async function uncompleteTask(uid: string, taskHistoryId: string): Promis
   const sideEffects: Promise<unknown>[] = [
     removeKarma(uid, 'completeTask', entityId),
     removeFromProgress(uid, parentTaskId, completedAtDate),
+    incrementField(activityTotalsPath(uid), 'tasks.completed', -1),
   ];
   revertDailyStreak(parentTaskId);
   if (repeating) {
     sideEffects.push(revertRoutineStreak(uid, parentTaskId));
   } else {
     sideEffects.push(addToOrdering(uid, parentTaskId, 'end'));
+    sideEffects.push(incrementField(activityTotalsPath(uid), 'tasks.active', 1));
   }
   const uncompleteResults = await Promise.allSettled(sideEffects);
   logSideEffectResults('uncompleteTask', uncompleteResults);

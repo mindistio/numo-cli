@@ -20,6 +20,13 @@ vi.mock('../../lib/streaks', () => ({
 // Mock validation (pass-through)
 vi.mock('../../lib/validation', () => ({
   validateDocId: vi.fn((id: string) => id),
+  incrementField: vi.fn(),
+}));
+
+// Mock karma (no-op)
+vi.mock('../../lib/karma', () => ({
+  giveKarma: vi.fn(),
+  removeKarma: vi.fn(),
 }));
 
 import { createTask, completeTask, listTasks } from '../tasks';

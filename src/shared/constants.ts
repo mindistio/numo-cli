@@ -16,6 +16,8 @@ export const KARMA_POINTS = {
   completeTask: 5,
   completeSubtask: [2, 5] as const,
   splitTask: 10,
+  createPost: 10,
+  addComment: 10,
 } as const;
 
 export const DIFFICULTY_BONUS = [0, 5, 15, 45] as const;

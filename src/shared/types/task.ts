@@ -35,6 +35,8 @@ export interface ITask {
   completions: number;
   repeat: RepeatConfig;
   subtasks: SubTask[];
+  withTime?: boolean;
+  listPosition?: string | null;
 }
 
 export interface IKarmaRecord {

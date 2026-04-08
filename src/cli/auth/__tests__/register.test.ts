@@ -248,27 +248,12 @@ describe('register (integration)', () => {
       }),
     );
 
-    // Batch write: counter + karma + karmaCount
+    // Batch write: only appLinks counter (no signup karma — aligned with mobile)
     expect(commit).toHaveBeenCalledWith([
       expect.objectContaining({
         type: 'transform',
         path: 'appLinks/users',
         transforms: [{ field: 'count', increment: 1 }],
-      }),
-      expect.objectContaining({
-        type: 'update',
-        path: 'users/uid123abc/karma/signUp',
-        data: expect.objectContaining({
-          userId: 'uid123abc',
-          entity: 'signUp',
-          entityId: 'signUp',
-          karma: 5,
-        }),
-      }),
-      expect.objectContaining({
-        type: 'transform',
-        path: 'users/uid123abc',
-        transforms: [{ field: 'karmaCount', increment: 5 }],
       }),
     ]);
   });

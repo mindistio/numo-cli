@@ -1,6 +1,7 @@
-import { MAX_POSTS_PER_REQUEST } from '../../shared';
+import { MAX_POSTS_PER_REQUEST, KARMA_POINTS } from '../../shared';
 import { getDoc, createDoc, updateDoc, deleteDoc, runQuery } from '../lib/firestore';
-import { validateDocId, checkOwnership } from '../lib/validation';
+import { validateDocId, checkOwnership, incrementField } from '../lib/validation';
+import { giveKarma } from '../lib/karma';
 
 function generateSlug(title: string): string {
   return title
@@ -66,7 +67,17 @@ export async function createPost(uid: string, body: Record<string, unknown>): Pr
   };
 
   const doc = await createDoc('posts', postData);
-  return { post: doc };
+  const postId = doc.id as string;
+
+  try {
+    await giveKarma(uid, 'createPost', postId, KARMA_POINTS.createPost, String(body.title));
+  } catch { /* non-critical */ }
+
+  try {
+    await incrementField(`users/${uid}/activity/totals`, 'posts.written', 1);
+  } catch { /* non-critical */ }
+
+  return { post: doc, karma: KARMA_POINTS.createPost };
 }
 
 export async function updatePost(uid: string, id: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
