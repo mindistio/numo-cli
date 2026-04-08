@@ -118,6 +118,7 @@ program
   .description('Quick-add a task (today, public, no wizard)')
   .option('--due <date>', 'Due date YYYY-MM-DD (default: today)')
   .option('--tags <tags>', 'Comma-separated tags')
+  .option('--public', 'Make task public (default)')
   .option('--private', 'Make task private')
   .action(async function (this: Command, textParts?: string[]) {
     const opts = this.optsWithGlobals();
@@ -132,6 +133,7 @@ program
       dueDate: opts.due ? (parseHumanDate(opts.due) ?? opts.due) : new Date().toISOString().slice(0, 10),
     };
     if (opts.tags) body.tags = opts.tags.split(',');
+    if (opts.public) body.isPublic = true;
     if (opts.private) body.isPublic = false;
 
     await runCreate({

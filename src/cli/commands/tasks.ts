@@ -249,6 +249,7 @@ Examples:
     .option('--text <text>', 'Task text')
     .option('--due <date>', 'Due date YYYY-MM-DD')
     .option('--tags <tags>', 'Comma-separated tags')
+    .option('--public', 'Make task public (default)')
     .option('--private', 'Make task private')
     .option('--note <note>', 'Task note')
     .option('--priority <n>', 'Priority 0.1–1.0')
@@ -318,7 +319,19 @@ Examples:
           // 'someday' -> no dueDate, service handles backlog
         }
 
-        // Step 2: "Add details?" gate (default = No = fast path)
+        // Step 2: Visibility
+        if (!opts.private && !opts.public) {
+          const visibility = await promptSelect({
+            message: 'Visibility',
+            options: [
+              { value: 'public', label: 'Public — visible to your squad' },
+              { value: 'private', label: 'Private — only you can see it' },
+            ],
+          });
+          if (visibility === 'private') body.isPublic = false;
+        }
+
+        // Step 3: "Add details?" gate (default = No = fast path)
         const addDetails = await promptConfirm({
           message: 'Add details? (tags, effort, time, note)',
           initialValue: false,
@@ -364,6 +377,7 @@ Examples:
         }
 
         // Apply flag overrides for non-prompted fields
+        if (opts.public) body.isPublic = true;
         if (opts.private) body.isPublic = false;
         if (opts.tags && !body.tags) body.tags = opts.tags.split(',');
         if (opts.note && !body.note) body.note = opts.note;
@@ -379,6 +393,7 @@ Examples:
         if (opts.priority) body.priority = parseFloat(opts.priority);
         if (opts.difficulty !== undefined) body.difficulty = parseInt(opts.difficulty);
         if (opts.duration) body.duration = parseInt(opts.duration);
+        if (opts.public) body.isPublic = true;
         if (opts.private) body.isPublic = false;
       }
 

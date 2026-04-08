@@ -16,6 +16,8 @@ export interface SubTask {
   completed: boolean;
 }
 
+export type TaskSource = 'app' | 'cli' | 'google-calendar';
+
 export interface ITask {
   id: string;
   text: string;
@@ -26,6 +28,7 @@ export interface ITask {
   dueDate: string | null;
   remindDate: string | null;
   tags: string[];
+  assets: string[];
   note: string;
   priority: number;
   difficulty: 0 | 1 | 2 | 3 | null;
@@ -37,6 +40,7 @@ export interface ITask {
   subtasks: SubTask[];
   withTime?: boolean;
   listPosition?: string | null;
+  source?: TaskSource;
 }
 
 export interface IKarmaRecord {

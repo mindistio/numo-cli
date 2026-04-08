@@ -419,6 +419,7 @@ export async function createTask(uid: string, body: Record<string, unknown>): Pr
     dueDate,
     remindDate: null,
     tags: Array.isArray(body.tags) ? body.tags : [],
+    assets: [],
     note: (body.note as string) ?? '',
     priority: typeof body.priority === 'number' ? body.priority : 0.0,
     difficulty: body.difficulty ?? null,
@@ -430,6 +431,7 @@ export async function createTask(uid: string, body: Record<string, unknown>): Pr
     subtasks: Array.isArray(body.subtasks) ? body.subtasks.map((s: any) => ({ id: crypto.randomUUID(), text: s.text, completed: false })) : [],
     withTime: dueDate != null && !/\b00:00$/.test(dueDate),
     listPosition: null,
+    source: 'cli',
   };
 
   taskData.remindDate = getTaskRemindDate(taskData as any);
