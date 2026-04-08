@@ -12,6 +12,9 @@
         { "type": "refactor", "section": "Miscellaneous", "hidden": true },
         { "type": "test", "section": "Miscellaneous", "hidden": true },
         { "type": "ci", "section": "Miscellaneous", "hidden": true }
+      ],
+      "extra-files": [
+        "skills/numo-cli/SKILL.md"
       ]
     }
   }

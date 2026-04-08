@@ -1,7 +1,7 @@
 ---
 name: numo-cli
 description: Manage ADHD tasks, routines and community via Numo CLI
-version: 1.0.1
+version: 1.0.1 # x-release-please-version
 license: MIT
 ---
 

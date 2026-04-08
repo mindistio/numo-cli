@@ -208,16 +208,20 @@ export async function commit(writes: CommitWrite[]): Promise<void> {
   const dbUrl = baseUrl.replace('/documents', '');
   const url = `${dbUrl}/documents:commit`;
 
+  // Firestore commit API expects resource names (projects/...), not full URLs
+  const toResourceName = (path: string) =>
+    `${baseUrl}/${path}`.replace('https://firestore.googleapis.com/v1/', '');
+
   const ops: WriteOp[] = writes.map((w) => {
     if (w.type === 'delete') {
-      return { delete: `${baseUrl}/${w.path}`.replace(getFirestoreBaseUrl(), baseUrl) };
+      return { delete: toResourceName(w.path) };
     }
 
     const op: WriteOp = {};
 
     if (w.type === 'update' && w.data) {
       op.update = {
-        name: `${baseUrl}/${w.path}`,
+        name: toResourceName(w.path),
         fields: toFirestoreFields(w.data),
       };
       if (w.fieldMask) {
@@ -227,7 +231,7 @@ export async function commit(writes: CommitWrite[]): Promise<void> {
 
     if (w.type === 'transform') {
       op.update = {
-        name: `${baseUrl}/${w.path}`,
+        name: toResourceName(w.path),
         fields: {},
       };
       op.updateTransforms = (w.transforms ?? []).map((t) => ({
