@@ -1,13 +1,13 @@
 ---
 name: numo-cli
 description: Manage ADHD tasks, routines and community via Numo CLI
-version: 1.0.0
+version: 1.0.1
 license: MIT
 ---
 
 # numo-cli
 
-CLI for Numo — the ADHD planner app. Tasks, routines, community. For humans and AI agents.
+CLI for [Numo](https://www.npmjs.com/package/numo-cli) — the ADHD planner app. Tasks, routines, community. For humans and AI agents.
 
 ## Protocol
 

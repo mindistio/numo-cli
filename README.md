@@ -3,8 +3,11 @@
 **The ADHD-friendly CLI for Numo — built for humans and AI agents.**
 
 [![npm](https://img.shields.io/npm/v/numo-cli)](https://www.npmjs.com/package/numo-cli)
+[![npm downloads](https://img.shields.io/npm/dm/numo-cli)](https://www.npmjs.com/package/numo-cli)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![CI](https://github.com/mindistio/numo-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/mindistio/numo-cli/actions/workflows/ci.yml)
+
+**npm:** [npmjs.com/package/numo-cli](https://www.npmjs.com/package/numo-cli)
 
 ## Install
 

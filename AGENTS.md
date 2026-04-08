@@ -1,10 +1,12 @@
 # AGENTS.md — numo-cli for AI Agents
 
-Instructions for AI agents (Claude, GPT, Cursor, Copilot, etc.) integrating with numo-cli.
+Instructions for AI agents (Claude, GPT, Cursor, Copilot, etc.) integrating with [numo-cli](https://www.npmjs.com/package/numo-cli).
 
 ## What is numo-cli?
 
 A CLI for the **Numo ADHD planner app**. It provides programmatic access to tasks, community posts, and user profiles. Same service layer as the iOS app.
+
+**npm:** [npmjs.com/package/numo-cli](https://www.npmjs.com/package/numo-cli)
 
 ## Install
 
