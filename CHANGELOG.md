@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/mindistio/numo-cli/compare/v1.1.0...v1.2.0) (2026-04-08)
+
+
+### Features
+
+* add task visibility prompt and align document structure with mobile app ([02f114c](https://github.com/mindistio/numo-cli/commit/02f114ca20468cadbed65876f610780c620616ee))
+
 ## [1.1.0](https://github.com/mindistio/numo-cli/compare/v1.0.1...v1.1.0) (2026-04-08)
 
 
