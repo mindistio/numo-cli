@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.4.0](https://github.com/mindistio/numo-cli/compare/v1.3.0...v1.4.0) (2026-04-09)
+
+
+### Features
+
+* bake API base URL into bundle, default to api.numo.ai ([932bc98](https://github.com/mindistio/numo-cli/commit/932bc98adc383bca291f7ba6ca8632205b85c488))
+* migrate auth to API server, bake API URL ([86acc3a](https://github.com/mindistio/numo-cli/commit/86acc3a2c3af57fd2c4bd84feee72045642e7267))
+
 ## [1.3.0](https://github.com/mindistio/numo-cli/compare/v1.2.0...v1.3.0) (2026-04-09)
 
 
