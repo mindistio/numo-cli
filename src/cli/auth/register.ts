@@ -1,13 +1,13 @@
 import { http } from '../lib/http';
 import pc from 'picocolors';
 import { saveCredentials } from './credentials';
-import { getFirebaseApiKey } from '../lib/config';
 import { promptText, promptPassword } from '../lib/prompts';
-import { Errors, CliError, classifyError, ErrorKind, ExitCode } from '../lib/errors';
-import { api } from '../lib/api-client';
+import { Errors, CliError, classifyError } from '../lib/errors';
 import { isInteractive } from '../lib/tty';
 import type { AuthResult } from './login';
 import { printSuccess } from './login';
+
+const API_BASE = process.env.NUMO_API_URL ?? 'http://localhost:3000';
 
 // ── Pure helpers ────────────────────────────────────────────────────
 
@@ -26,32 +26,26 @@ export function validatePassword(password: string): string {
   return password;
 }
 
-// ── Firebase error classifier ───────────────────────────────────────
+// ── API error classifier ───────────────────────────────────────────
 
 export function classifySignUpError(err: unknown): CliError {
   if (err instanceof CliError) return err;
 
   const resp = (err as any)?.response?.data?.error;
+  const kind: string = resp?.kind ?? '';
   const msg: string = resp?.message ?? '';
 
-  if (msg.includes('EMAIL_EXISTS')) {
+  if (kind === 'CONFLICT' || msg.includes('already in use')) {
     return Errors.invalidInput(
       'Email already in use',
       'Already have an account? Run: numo login',
     );
   }
-  if (msg.includes('INVALID_EMAIL')) {
+  if (msg.includes('Invalid email')) {
     return Errors.invalidInput('Invalid email address');
   }
-  if (msg.includes('WEAK_PASSWORD')) {
+  if (msg.includes('Password too weak') || msg.includes('min 6')) {
     return Errors.invalidInput('Password is too weak (min 6 characters)');
-  }
-  if (msg.includes('OPERATION_NOT_ALLOWED')) {
-    return new CliError(
-      ErrorKind.AUTH_FORBIDDEN,
-      'Email registration is disabled',
-      ExitCode.NO_PERM,
-    );
   }
   return classifyError(err);
 }
@@ -59,44 +53,23 @@ export function classifySignUpError(err: unknown): CliError {
 // ── I/O functions ───────────────────────────────────────────────────
 
 async function signUp(email: string, password: string): Promise<AuthResult> {
-  const fbApiKey = getFirebaseApiKey();
-  if (!fbApiKey) throw Errors.configMissing('NUMO_FIREBASE_API_KEY');
-
   try {
-    const resp = await http.post(
-      `https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${fbApiKey}`,
-      { email, password, returnSecureToken: true },
-      { headers: { 'Content-Type': 'application/json' } },
-    );
+    const resp = await http.post(`${API_BASE}/api/auth/register`, {
+      email,
+      password,
+      tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      tzOffset: new Date().getTimezoneOffset(),
+    });
 
     return {
       refreshToken: resp.data.refreshToken,
-      uid: resp.data.localId,
-      displayName: resp.data.email,
+      uid: resp.data.uid,
+      displayName: resp.data.email ?? email,
       idToken: resp.data.idToken,
-      idTokenExpiry:
-        Date.now() + (parseInt(resp.data.expiresIn) || 3600) * 1000,
+      idTokenExpiry: Date.now() + (resp.data.expiresIn || 3600) * 1000,
     };
   } catch (err) {
     throw classifySignUpError(err);
-  }
-}
-
-async function setupUserProfile(): Promise<void> {
-  const body = {
-    tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
-    tzOffset: new Date().getTimezoneOffset(),
-  };
-
-  // Retry up to 3 times with backoff — profile must exist for CLI to work
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try {
-      await api.post('/api/profile/setup', body);
-      return;
-    } catch (err) {
-      if (attempt === 2) throw err;
-      await new Promise((r) => setTimeout(r, 1000 * Math.pow(2, attempt)));
-    }
   }
 }
 
@@ -130,12 +103,12 @@ export async function register(
 
     const password = validatePassword(rawPassword);
 
-    // 4. Firebase Auth: create account
+    // 4. Create account (API handles Firebase + profile setup)
     s.start('Creating account...');
     spinnerActive = true;
     const result = await signUp(email, password);
 
-    // 5. Save credentials (BEFORE Firestore writes — getIdToken reads from file)
+    // 5. Save credentials
     saveCredentials({
       refreshToken: result.refreshToken,
       uid: result.uid,
@@ -143,10 +116,6 @@ export async function register(
       idToken: result.idToken,
       idTokenExpiry: result.idTokenExpiry,
     });
-
-    // 6. API: user document + counters
-    s.message('Setting up profile...');
-    await setupUserProfile();
 
     s.stop(`Registered as ${pc.green(result.displayName)}`);
     p.outro('Welcome to Numo!');

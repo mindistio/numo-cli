@@ -69,18 +69,16 @@ export async function getIdToken(): Promise<string> {
 }
 
 async function performRefresh(creds: Credentials): Promise<string> {
-  const { getFirebaseApiKey } = await import('../lib/config');
-  const fbApiKey = getFirebaseApiKey();
-  if (!fbApiKey) throw new Error('NUMO_FIREBASE_API_KEY not set');
+  const apiBase = process.env.NUMO_API_URL ?? 'http://localhost:3000';
 
   const { http } = await import('../lib/http');
   const resp = await http.post(
-    `https://securetoken.googleapis.com/v1/token?key=${fbApiKey}`,
-    { grant_type: 'refresh_token', refresh_token: creds.refreshToken },
-    { headers: { 'Content-Type': 'application/json' } }
+    `${apiBase}/api/auth/refresh`,
+    { refreshToken: creds.refreshToken },
   );
-  creds.idToken = resp.data.id_token;
-  creds.idTokenExpiry = Date.now() + (parseInt(resp.data.expires_in) || 3600) * 1000;
+  creds.idToken = resp.data.idToken;
+  creds.refreshToken = resp.data.refreshToken ?? creds.refreshToken;
+  creds.idTokenExpiry = Date.now() + (resp.data.expiresIn || 3600) * 1000;
   saveCredentials(creds);
 
   return creds.idToken!;

@@ -11,6 +11,7 @@ CLI for [Numo](https://www.npmjs.com/package/numo-cli) — the ADHD planner app.
 
 ## Protocol
 
+- **Server:** Set `NUMO_API_URL=https://api.numo.ai` (or your API server). All data and auth goes through this endpoint.
 - **Auth:** `numo login` or set `NUMO_TOKEN=<idToken>` env var. Check: `numo whoami --json`. Credentials at `~/.config/numo/` (or `NUMO_CONFIG_DIR`).
 - **Output:** Non-TTY auto-outputs JSON. Use `--json` to force. Field selection: `--json id,text,completed`.
 - **Dates:** Accepts ISO (`2026-03-27`) and natural language (`tomorrow`, `next monday`, `in 3 days`).

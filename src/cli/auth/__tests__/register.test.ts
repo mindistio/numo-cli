@@ -53,33 +53,27 @@ describe('validatePassword', () => {
 });
 
 describe('classifySignUpError', () => {
-  function makeFirebaseError(message: string) {
-    return { response: { data: { error: { code: 400, message } } } };
+  function makeApiError(kind: string, message: string) {
+    return { response: { data: { error: { kind, message } } } };
   }
 
-  it('maps EMAIL_EXISTS', () => {
-    const err = classifySignUpError(makeFirebaseError('EMAIL_EXISTS'));
+  it('maps CONFLICT / already in use', () => {
+    const err = classifySignUpError(makeApiError('CONFLICT', 'Email already in use'));
     expect(err).toBeInstanceOf(CliError);
     expect(err.message).toBe('Email already in use');
     expect(err.options.hint).toContain('numo login');
   });
 
-  it('maps INVALID_EMAIL', () => {
-    const err = classifySignUpError(makeFirebaseError('INVALID_EMAIL'));
+  it('maps Invalid email', () => {
+    const err = classifySignUpError(makeApiError('INVALID_INPUT', 'Invalid email address'));
     expect(err.message).toBe('Invalid email address');
   });
 
-  it('maps WEAK_PASSWORD', () => {
+  it('maps Password too weak', () => {
     const err = classifySignUpError(
-      makeFirebaseError('WEAK_PASSWORD : Password should be at least 6 characters'),
+      makeApiError('INVALID_INPUT', 'Password too weak (min 6 characters)'),
     );
     expect(err.message).toContain('min 6 characters');
-  });
-
-  it('maps OPERATION_NOT_ALLOWED', () => {
-    const err = classifySignUpError(makeFirebaseError('OPERATION_NOT_ALLOWED'));
-    expect(err.message).toBe('Email registration is disabled');
-    expect(err.kind).toBe(ErrorKind.AUTH_FORBIDDEN);
   });
 
   it('falls back to classifyError for unknown errors', () => {
@@ -102,14 +96,6 @@ vi.mock('../../lib/http', () => ({
 vi.mock('../credentials', () => ({
   saveCredentials: vi.fn(),
   getIdToken: vi.fn().mockResolvedValue('test-id-token'),
-}));
-
-vi.mock('../../lib/api-client', () => ({
-  api: { post: vi.fn().mockResolvedValue({ uid: 'uid123abc', email: 'test@example.com', username: 'test-uid1' }) },
-}));
-
-vi.mock('../../lib/config', () => ({
-  getFirebaseApiKey: vi.fn().mockReturnValue('test-api-key'),
 }));
 
 vi.mock('../../lib/prompts', () => ({
@@ -139,29 +125,27 @@ describe('register (integration)', () => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
   });
 
-  it('happy path: creates account, saves credentials, calls API setup', async () => {
+  it('happy path: creates account via API, saves credentials', async () => {
     const { http } = await import('../../lib/http');
     const { saveCredentials } = await import('../credentials');
-    const { api } = await import('../../lib/api-client');
     const { register } = await import('../register');
 
     vi.mocked(http.post).mockResolvedValueOnce({
       data: {
         idToken: 'test-id-token',
         refreshToken: 'test-refresh-token',
-        localId: 'uid123abc',
+        uid: 'uid123abc',
         email: 'test@example.com',
-        expiresIn: '3600',
+        expiresIn: 3600,
       },
     } as any);
 
     await register({ email: 'test@example.com', password: 'secret123' });
 
-    // Firebase Auth called
+    // API auth/register called
     expect(http.post).toHaveBeenCalledWith(
-      expect.stringContaining('accounts:signUp'),
+      expect.stringContaining('/api/auth/register'),
       expect.objectContaining({ email: 'test@example.com', password: 'secret123' }),
-      expect.any(Object),
     );
 
     // Credentials saved
@@ -172,24 +156,15 @@ describe('register (integration)', () => {
         email: 'test@example.com',
       }),
     );
-
-    // Profile setup via API
-    expect(api.post).toHaveBeenCalledWith(
-      '/api/profile/setup',
-      expect.objectContaining({
-        tz: expect.any(String),
-        tzOffset: expect.any(Number),
-      }),
-    );
   });
 
-  it('EMAIL_EXISTS shows correct error', async () => {
+  it('CONFLICT shows correct error', async () => {
     const { http } = await import('../../lib/http');
     const { register } = await import('../register');
     const p = await import('@clack/prompts');
 
     vi.mocked(http.post).mockRejectedValueOnce({
-      response: { data: { error: { code: 400, message: 'EMAIL_EXISTS' } } },
+      response: { data: { error: { kind: 'CONFLICT', message: 'Email already in use' } } },
     });
 
     await register({ email: 'taken@example.com', password: 'secret123' });
@@ -219,29 +194,5 @@ describe('register (integration)', () => {
 
     expect(http.post).not.toHaveBeenCalled();
     expect(process.exit).toHaveBeenCalled();
-  });
-
-  it('credentials saved BEFORE API call', async () => {
-    const { http } = await import('../../lib/http');
-    const { saveCredentials } = await import('../credentials');
-    const { api } = await import('../../lib/api-client');
-    const { register } = await import('../register');
-
-    const callOrder: string[] = [];
-    vi.mocked(saveCredentials).mockImplementation(() => { callOrder.push('saveCredentials'); });
-    vi.mocked(api.post).mockImplementation(async () => { callOrder.push('apiPost'); return {}; });
-
-    vi.mocked(http.post).mockResolvedValueOnce({
-      data: {
-        idToken: 'tok', refreshToken: 'ref', localId: 'uid',
-        email: 'a@b.com', expiresIn: '3600',
-      },
-    } as any);
-
-    await register({ email: 'a@b.com', password: 'secret123' });
-
-    expect(callOrder.indexOf('saveCredentials')).toBeLessThan(
-      callOrder.indexOf('apiPost'),
-    );
   });
 });

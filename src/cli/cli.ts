@@ -4,7 +4,7 @@ import { login } from './auth/login';
 import { register } from './auth/register';
 import { clearCredentials, loadCredentials } from './auth/credentials';
 import { registerTasksCommands } from './commands/tasks';
-import { requireUid, isAdmin } from './lib/uid';
+import { requireUid } from './lib/uid';
 import { createTask } from './services/tasks';
 import { runCreate } from './lib/actions';
 import { formatKarmaGain } from './lib/format';
@@ -150,7 +150,7 @@ program
     });
   });
 
-if (isAdmin()) registerPostsCommands(program);
+registerPostsCommands(program);
 registerProfileCommands(program);
 registerDoctorCommand(program);
 

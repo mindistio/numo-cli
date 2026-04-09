@@ -42,10 +42,6 @@ jobs:
       - run: npm publish --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NUMO_FIREBASE_API_KEY: ${{ secrets.NUMO_FIREBASE_API_KEY }}
-          NUMO_FIREBASE_PROJECT_ID: ${{ secrets.NUMO_FIREBASE_PROJECT_ID }}
-          NUMO_FIREBASE_APP_ID: ${{ secrets.NUMO_FIREBASE_APP_ID }}
-          NUMO_ADMIN_UIDS: ${{ secrets.NUMO_ADMIN_UIDS }}
 
   build-binaries:
     needs: release-please
@@ -64,11 +60,6 @@ jobs:
       - name: Test
         run: npm test
       - run: npm run build
-        env:
-          NUMO_FIREBASE_API_KEY: ${{ secrets.NUMO_FIREBASE_API_KEY }}
-          NUMO_FIREBASE_PROJECT_ID: ${{ secrets.NUMO_FIREBASE_PROJECT_ID }}
-          NUMO_FIREBASE_APP_ID: ${{ secrets.NUMO_FIREBASE_APP_ID }}
-          NUMO_ADMIN_UIDS: ${{ secrets.NUMO_ADMIN_UIDS }}
       - run: bash scripts/build-binaries.sh
       - uses: softprops/action-gh-release@v2
         with:

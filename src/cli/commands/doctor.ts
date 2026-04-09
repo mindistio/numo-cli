@@ -1,7 +1,6 @@
 import { Command } from 'commander';
 import pc from 'picocolors';
 import { loadCredentials, getIdToken } from '../auth/credentials';
-import { getFirebaseApiKey } from '../lib/config';
 import { printJson } from '../lib/output';
 import { isInteractive } from '../lib/tty';
 import { SYM } from '../lib/symbols';
@@ -26,7 +25,16 @@ async function runChecks(): Promise<CheckResult[]> {
     message: major >= 18 ? `Node ${nodeVersion}` : `Node ${nodeVersion} — requires >= 18`,
   });
 
-  // 2. Credentials
+  // 2. API URL
+  checks.push({
+    name: 'api_url',
+    status: process.env.NUMO_API_URL ? 'ok' : 'warn',
+    message: process.env.NUMO_API_URL
+      ? `API URL: ${API_BASE}`
+      : `NUMO_API_URL not set (using default: ${API_BASE})`,
+  });
+
+  // 3. Credentials
   const creds = loadCredentials();
   checks.push({
     name: 'credentials',
@@ -34,7 +42,7 @@ async function runChecks(): Promise<CheckResult[]> {
     message: creds ? `Logged in as ${creds.email}` : 'Not logged in (run: numo login)',
   });
 
-  // 3. Token refresh
+  // 4. Token refresh
   if (creds) {
     try {
       await getIdToken();
@@ -45,14 +53,6 @@ async function runChecks(): Promise<CheckResult[]> {
   } else {
     checks.push({ name: 'token', status: 'fail', message: 'Skipped (no credentials)' });
   }
-
-  // 4. API key
-  const apiKey = getFirebaseApiKey();
-  checks.push({
-    name: 'api_key',
-    status: apiKey ? 'ok' : 'fail',
-    message: apiKey ? 'Firebase API key configured' : 'NUMO_FIREBASE_API_KEY not set',
-  });
 
   // 5. API server reachable
   try {

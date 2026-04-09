@@ -1,10 +1,10 @@
 import { http } from '../lib/http';
 import pc from 'picocolors';
 import { saveCredentials } from './credentials';
-import { getFirebaseApiKey } from '../lib/config';
 import { promptText, promptPassword, promptSelect } from '../lib/prompts';
-import { Errors, CliError, classifyError } from '../lib/errors';
-import { isAdmin } from '../lib/uid';
+import { CliError, classifyError } from '../lib/errors';
+
+const API_BASE = process.env.NUMO_API_URL ?? 'http://localhost:3000';
 
 export interface AuthResult {
   refreshToken: string;
@@ -15,28 +15,22 @@ export interface AuthResult {
 }
 
 async function authenticateWithEmail(spinner: { start: (msg?: string) => void; stop: (msg?: string) => void }): Promise<AuthResult> {
-  const fbApiKey = getFirebaseApiKey();
-  if (!fbApiKey) {
-    throw Errors.configMissing('NUMO_FIREBASE_API_KEY');
-  }
-
   const email = await promptText({ message: 'Email', required: true });
   const password = await promptPassword({ message: 'Password' });
 
   spinner.start('Signing in...');
 
   const resp = await http.post(
-    `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${fbApiKey}`,
-    { email, password, returnSecureToken: true },
-    { headers: { 'Content-Type': 'application/json' } }
+    `${API_BASE}/api/auth/login`,
+    { email, password },
   );
 
   return {
     refreshToken: resp.data.refreshToken,
-    uid: resp.data.localId,
-    displayName: resp.data.email,
+    uid: resp.data.uid,
+    displayName: resp.data.email ?? email,
     idToken: resp.data.idToken,
-    idTokenExpiry: Date.now() + (parseInt(resp.data.expiresIn) || 3600) * 1000,
+    idTokenExpiry: Date.now() + (resp.data.expiresIn || 3600) * 1000,
   };
 }
 
@@ -44,11 +38,8 @@ export function printSuccess(displayName: string) {
   const lines = [
     `  ${pc.dim('$')} numo tasks list --date YYYY-MM-DD   List tasks for a date`,
     `  ${pc.dim('$')} numo tasks create --text "..."       Create a task`,
+    `  ${pc.dim('$')} numo profile                         View your profile`,
   ];
-  if (isAdmin()) {
-    lines.push(`  ${pc.dim('$')} numo posts list                      Browse community posts`);
-  }
-  lines.push(`  ${pc.dim('$')} numo profile                         View your profile`);
 
   console.log(`\n  ${pc.bold('Available commands:')}\n${lines.join('\n')}\n`);
 }
