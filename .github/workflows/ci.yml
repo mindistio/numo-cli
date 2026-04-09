@@ -34,11 +34,6 @@ jobs:
 
       - name: Build
         run: npm run build
-        env:
-          NUMO_FIREBASE_API_KEY: ${{ secrets.NUMO_FIREBASE_API_KEY }}
-          NUMO_FIREBASE_PROJECT_ID: ${{ secrets.NUMO_FIREBASE_PROJECT_ID }}
-          NUMO_FIREBASE_APP_ID: ${{ secrets.NUMO_FIREBASE_APP_ID }}
-          NUMO_ADMIN_UIDS: ${{ secrets.NUMO_ADMIN_UIDS }}
 
       - name: Verify binary runs
         run: node dist/cli.cjs --version
