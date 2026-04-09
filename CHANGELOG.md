@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.0](https://github.com/mindistio/numo-cli/compare/v1.2.0...v1.3.0) (2026-04-09)
+
+
+### Features
+
+* migrate auth from Firebase-direct to API server ([4f607de](https://github.com/mindistio/numo-cli/commit/4f607de081ccc4a555907f513fe4a505545b514c))
+* migrate auth to API server, remove Firebase from CLI ([e51fad0](https://github.com/mindistio/numo-cli/commit/e51fad04a6df73d939f59efe9206c3922ad819d5))
+
 ## [1.2.0](https://github.com/mindistio/numo-cli/compare/v1.1.0...v1.2.0) (2026-04-08)
 
 
