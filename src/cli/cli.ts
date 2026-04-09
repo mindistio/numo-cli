@@ -3,7 +3,6 @@ import pc from 'picocolors';
 import { login } from './auth/login';
 import { register } from './auth/register';
 import { clearCredentials, loadCredentials } from './auth/credentials';
-import { clearStreaks } from './lib/streaks';
 import { registerTasksCommands } from './commands/tasks';
 import { requireUid, isAdmin } from './lib/uid';
 import { createTask } from './services/tasks';
@@ -11,6 +10,7 @@ import { runCreate } from './lib/actions';
 import { formatKarmaGain } from './lib/format';
 import { SYM } from './lib/symbols';
 import { parseHumanDate } from './lib/parse-date';
+import type { TaskCreateResponse } from './types/api';
 
 import { registerPostsCommands } from './commands/posts';
 import { registerProfileCommands } from './commands/profile';
@@ -62,7 +62,7 @@ program
   .command('register')
   .description('Create a new Numo account')
   .option('--email <email>', 'Email address')
-  .option('--password <password>', 'Password (min 6 characters)')
+  .option('--password <password>', 'Password (min 6 chars; visible in ps/history — prefer interactive mode)')
   .action(async (opts) => { await register(opts); })
   .addHelpText('after', `
 Examples:
@@ -74,7 +74,6 @@ program
   .description('Clear stored credentials')
   .action(() => {
     clearCredentials();
-    clearStreaks();
     console.log(pc.green('Logged out.'));
   });
 
@@ -141,11 +140,10 @@ program
       fn: () => createTask(uid, body),
       dataKey: 'task',
       spinnerMessage: 'Creating task...',
-      onInteractive: (_task, payload) => {
-        const task = payload.task as Record<string, unknown>;
+      onInteractive: (_task, payload: TaskCreateResponse) => {
+        const { task, karma } = payload;
         const check = pc.green(SYM.check);
-        console.log(`\n  ${check} Created  ${task.text}  ${pc.dim(task.id as string)}`);
-        const karma = payload.karma as number | undefined;
+        console.log(`\n  ${check} Created  ${task.text}  ${pc.dim(task.id)}`);
         if (karma) console.log(`    ${formatKarmaGain(karma)}`);
         console.log('');
       },

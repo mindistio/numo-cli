@@ -1,8 +1,3 @@
-export function getFirestoreBaseUrl(): string {
-  const projectId = getFirebaseProjectId();
-  return `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents`;
-}
-
 // Injected at build time by esbuild `define`. Fallback to env vars for dev mode.
 declare const __FIREBASE_API_KEY__: string;
 declare const __FIREBASE_PROJECT_ID__: string;

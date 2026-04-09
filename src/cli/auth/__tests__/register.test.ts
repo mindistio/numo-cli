@@ -2,9 +2,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   validateEmail,
   validatePassword,
-  generateUsername,
-  randomAvatar,
-  buildUserDoc,
   classifySignUpError,
 } from '../register';
 import { CliError, ErrorKind } from '../../lib/errors';
@@ -52,61 +49,6 @@ describe('validatePassword', () => {
 
   it('rejects empty string', () => {
     expect(() => validatePassword('')).toThrow('min 6 characters');
-  });
-});
-
-describe('generateUsername', () => {
-  it('generates from email prefix + uid prefix', () => {
-    expect(generateUsername('john@gmail.com', 'xR4kLm9abc')).toBe('john-xR4k');
-  });
-
-  it('truncates long email prefix to 7 chars', () => {
-    expect(generateUsername('longprefix@x.com', 'abcdefgh')).toBe('longpre-abcd');
-  });
-
-  it('keeps short email prefix as-is', () => {
-    expect(generateUsername('ab@x.com', '1234abcd')).toBe('ab-1234');
-  });
-});
-
-describe('randomAvatar', () => {
-  it('returns valid avatar path', () => {
-    expect(randomAvatar()).toMatch(/^assets\/avatar[1-6]-min\.png$/);
-  });
-});
-
-describe('buildUserDoc', () => {
-  it('returns object with all mandatory fields', () => {
-    const now = 1711796400000;
-    const doc = buildUserDoc('user@example.com', 'uid123', 'user-uid1', 'assets/avatar1-min.png', now);
-
-    expect(doc).toMatchObject({
-      email: 'user@example.com',
-      userId: 'uid123',
-      signUpTag: 'Numo Sign up',
-      createdAt: now,
-      username: 'user-uid1',
-      defaultAvatar: 'assets/avatar1-min.png',
-      reminderPlatform: 'imessage',
-      postOnboardingV1Status: 'not-completed',
-      onboarding: {},
-    });
-    expect(doc.fcmToken).toEqual([]);
-    expect(doc.badges).toEqual([]);
-    expect(doc.preference).toHaveProperty('tz');
-    expect((doc.preference as any).tz).toBeTypeOf('string');
-    expect((doc.preference as any).timezones).toBeInstanceOf(Array);
-    expect((doc.preference as any).timezones[0]).toBeTypeOf('number');
-  });
-
-  it('has all expected top-level keys', () => {
-    const doc = buildUserDoc('a@b.com', 'uid', 'a-uid', 'assets/avatar1-min.png');
-    const keys = Object.keys(doc).sort();
-    expect(keys).toEqual([
-      'badges', 'createdAt', 'defaultAvatar', 'email', 'fcmToken',
-      'onboarding', 'postOnboardingV1Status', 'preference',
-      'reminderPlatform', 'signUpTag', 'userId', 'username',
-    ]);
   });
 });
 
@@ -159,11 +101,11 @@ vi.mock('../../lib/http', () => ({
 
 vi.mock('../credentials', () => ({
   saveCredentials: vi.fn(),
+  getIdToken: vi.fn().mockResolvedValue('test-id-token'),
 }));
 
-vi.mock('../../lib/firestore', () => ({
-  setDoc: vi.fn().mockResolvedValue({}),
-  commit: vi.fn().mockResolvedValue(undefined),
+vi.mock('../../lib/api-client', () => ({
+  api: { post: vi.fn().mockResolvedValue({ uid: 'uid123abc', email: 'test@example.com', username: 'test-uid1' }) },
 }));
 
 vi.mock('../../lib/config', () => ({
@@ -193,16 +135,14 @@ vi.mock('@clack/prompts', () => ({
 describe('register (integration)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Prevent process.exit from actually exiting
     vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
-    // Suppress console.log from printSuccess
     vi.spyOn(console, 'log').mockImplementation(() => {});
   });
 
-  it('happy path: creates account, saves credentials, sets up profile', async () => {
+  it('happy path: creates account, saves credentials, calls API setup', async () => {
     const { http } = await import('../../lib/http');
     const { saveCredentials } = await import('../credentials');
-    const { setDoc, commit } = await import('../../lib/firestore');
+    const { api } = await import('../../lib/api-client');
     const { register } = await import('../register');
 
     vi.mocked(http.post).mockResolvedValueOnce({
@@ -233,29 +173,14 @@ describe('register (integration)', () => {
       }),
     );
 
-    // User document created with all mandatory fields
-    expect(setDoc).toHaveBeenCalledWith(
-      'users/uid123abc',
+    // Profile setup via API
+    expect(api.post).toHaveBeenCalledWith(
+      '/api/profile/setup',
       expect.objectContaining({
-        email: 'test@example.com',
-        userId: 'uid123abc',
-        signUpTag: 'Numo Sign up',
-        fcmToken: [],
-        badges: [],
-        reminderPlatform: 'imessage',
-        onboarding: {},
-        postOnboardingV1Status: 'not-completed',
+        tz: expect.any(String),
+        tzOffset: expect.any(Number),
       }),
     );
-
-    // Batch write: only appLinks counter (no signup karma — aligned with mobile)
-    expect(commit).toHaveBeenCalledWith([
-      expect.objectContaining({
-        type: 'transform',
-        path: 'appLinks/users',
-        transforms: [{ field: 'count', increment: 1 }],
-      }),
-    ]);
   });
 
   it('EMAIL_EXISTS shows correct error', async () => {
@@ -296,15 +221,15 @@ describe('register (integration)', () => {
     expect(process.exit).toHaveBeenCalled();
   });
 
-  it('credentials saved BEFORE Firestore writes', async () => {
+  it('credentials saved BEFORE API call', async () => {
     const { http } = await import('../../lib/http');
     const { saveCredentials } = await import('../credentials');
-    const { setDoc } = await import('../../lib/firestore');
+    const { api } = await import('../../lib/api-client');
     const { register } = await import('../register');
 
     const callOrder: string[] = [];
     vi.mocked(saveCredentials).mockImplementation(() => { callOrder.push('saveCredentials'); });
-    vi.mocked(setDoc).mockImplementation(async () => { callOrder.push('setDoc'); return {}; });
+    vi.mocked(api.post).mockImplementation(async () => { callOrder.push('apiPost'); return {}; });
 
     vi.mocked(http.post).mockResolvedValueOnce({
       data: {
@@ -316,7 +241,7 @@ describe('register (integration)', () => {
     await register({ email: 'a@b.com', password: 'secret123' });
 
     expect(callOrder.indexOf('saveCredentials')).toBeLessThan(
-      callOrder.indexOf('setDoc'),
+      callOrder.indexOf('apiPost'),
     );
   });
 });

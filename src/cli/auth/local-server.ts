@@ -1,3 +1,4 @@
+import * as crypto from 'crypto';
 import * as http from 'http';
 import * as net from 'net';
 import * as url from 'url';
@@ -17,6 +18,9 @@ export function findFreePort(): Promise<number> {
 
 // Serves an HTML page on / and waits for GET /callback
 export function serveHtmlAndWaitForCallback(port: number, html: string, expectedState: string): Promise<CallbackParams> {
+  const nonce = crypto.randomBytes(16).toString('base64');
+  const finalHtml = html.replace(/<script(?=[\s>])/g, `<script nonce="${nonce}"`);
+
   return new Promise((resolve, reject) => {
     const connections = new Set<net.Socket>();
     const server = http.createServer((req, res) => {
@@ -48,9 +52,9 @@ export function serveHtmlAndWaitForCallback(port: number, html: string, expected
       res.writeHead(200, {
         'Content-Type': 'text/html',
         'Cache-Control': 'no-store',
-        'Content-Security-Policy': "default-src 'self' https://www.gstatic.com 'unsafe-inline'",
+        'Content-Security-Policy': `default-src 'self' https://www.gstatic.com; script-src 'nonce-${nonce}' https://www.gstatic.com; style-src 'unsafe-inline'`,
       });
-      res.end(html);
+      res.end(finalHtml);
     });
 
     server.on('connection', (conn) => {

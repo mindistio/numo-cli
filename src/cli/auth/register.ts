@@ -4,7 +4,7 @@ import { saveCredentials } from './credentials';
 import { getFirebaseApiKey } from '../lib/config';
 import { promptText, promptPassword } from '../lib/prompts';
 import { Errors, CliError, classifyError, ErrorKind, ExitCode } from '../lib/errors';
-import { setDoc, commit } from '../lib/firestore';
+import { api } from '../lib/api-client';
 import { isInteractive } from '../lib/tty';
 import type { AuthResult } from './login';
 import { printSuccess } from './login';
@@ -24,43 +24,6 @@ export function validatePassword(password: string): string {
     throw Errors.invalidInput('Password is too weak (min 6 characters)');
   }
   return password;
-}
-
-export function generateUsername(email: string, uid: string): string {
-  const emailPart = email.split('@')[0].slice(0, 7);
-  const uidPart = uid.slice(0, 4);
-  return `${emailPart}-${uidPart}`;
-}
-
-export function randomAvatar(): string {
-  const index = Math.floor(Math.random() * 6) + 1;
-  return `assets/avatar${index}-min.png`;
-}
-
-export function buildUserDoc(
-  email: string,
-  uid: string,
-  username: string,
-  avatar: string,
-  now = Date.now(),
-): Record<string, unknown> {
-  return {
-    email,
-    userId: uid,
-    signUpTag: 'Numo Sign up',
-    createdAt: now,
-    username,
-    defaultAvatar: avatar,
-    preference: {
-      tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      timezones: [new Date().getTimezoneOffset()],
-    },
-    fcmToken: [],
-    badges: [],
-    reminderPlatform: 'imessage',
-    onboarding: {},
-    postOnboardingV1Status: 'not-completed',
-  };
 }
 
 // ── Firebase error classifier ───────────────────────────────────────
@@ -119,20 +82,22 @@ async function signUp(email: string, password: string): Promise<AuthResult> {
   }
 }
 
-async function setupUserProfile(uid: string, email: string): Promise<void> {
-  const now = Date.now();
-  const username = generateUsername(email, uid);
-  const avatar = randomAvatar();
+async function setupUserProfile(): Promise<void> {
+  const body = {
+    tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    tzOffset: new Date().getTimezoneOffset(),
+  };
 
-  await setDoc(`users/${uid}`, buildUserDoc(email, uid, username, avatar, now));
-
-  await commit([
-    {
-      type: 'transform',
-      path: 'appLinks/users',
-      transforms: [{ field: 'count', increment: 1 }],
-    },
-  ]);
+  // Retry up to 3 times with backoff — profile must exist for CLI to work
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      await api.post('/api/profile/setup', body);
+      return;
+    } catch (err) {
+      if (attempt === 2) throw err;
+      await new Promise((r) => setTimeout(r, 1000 * Math.pow(2, attempt)));
+    }
+  }
 }
 
 // ── Main entry point ────────────────────────────────────────────────
@@ -179,9 +144,9 @@ export async function register(
       idTokenExpiry: result.idTokenExpiry,
     });
 
-    // 6. Firestore: user document + karma + counters
+    // 6. API: user document + counters
     s.message('Setting up profile...');
-    await setupUserProfile(result.uid, email);
+    await setupUserProfile();
 
     s.stop(`Registered as ${pc.green(result.displayName)}`);
     p.outro('Welcome to Numo!');
