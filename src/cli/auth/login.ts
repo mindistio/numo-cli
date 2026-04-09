@@ -3,8 +3,7 @@ import pc from 'picocolors';
 import { saveCredentials } from './credentials';
 import { promptText, promptPassword, promptSelect } from '../lib/prompts';
 import { CliError, classifyError } from '../lib/errors';
-
-const API_BASE = process.env.NUMO_API_URL ?? 'http://localhost:3000';
+import { API_BASE } from '../lib/api-client';
 
 export interface AuthResult {
   refreshToken: string;

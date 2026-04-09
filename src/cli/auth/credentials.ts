@@ -69,7 +69,7 @@ export async function getIdToken(): Promise<string> {
 }
 
 async function performRefresh(creds: Credentials): Promise<string> {
-  const apiBase = process.env.NUMO_API_URL ?? 'http://localhost:3000';
+  const { API_BASE: apiBase } = await import('../lib/api-client');
 
   const { http } = await import('../lib/http');
   const resp = await http.post(

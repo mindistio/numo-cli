@@ -14,6 +14,7 @@ await esbuild.build({
   banner: { js: '#!/usr/bin/env node' },
   define: {
     __CLI_VERSION__: JSON.stringify(pkg.version),
+    __API_BASE_URL__: JSON.stringify(process.env.NUMO_API_URL ?? 'https://api.numo.ai'),
   },
 });
 

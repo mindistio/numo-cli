@@ -2,7 +2,9 @@ import { getIdToken } from '../auth/credentials';
 import { http, type HttpResponse } from './http';
 import { CliError, ErrorKind, ExitCode } from './errors';
 
-const API_BASE = process.env.NUMO_API_URL ?? 'http://localhost:3000';
+declare const __API_BASE_URL__: string;
+export const API_BASE = process.env.NUMO_API_URL
+  ?? (typeof __API_BASE_URL__ !== 'undefined' ? __API_BASE_URL__ : 'http://localhost:3000');
 
 // Warn if API URL is HTTP in non-local environments
 if (API_BASE !== 'http://localhost:3000' && API_BASE.startsWith('http://')) {

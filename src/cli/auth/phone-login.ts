@@ -2,9 +2,8 @@ import { http } from '../lib/http';
 import pc from 'picocolors';
 import { Errors } from '../lib/errors';
 import { promptText } from '../lib/prompts';
+import { API_BASE } from '../lib/api-client';
 import type { AuthResult } from './login';
-
-const API_BASE = process.env.NUMO_API_URL ?? 'http://localhost:3000';
 const POLL_INTERVAL = 2000;
 const POLL_TIMEOUT = 5 * 60 * 1000; // 5 minutes
 

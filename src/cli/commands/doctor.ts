@@ -1,11 +1,10 @@
 import { Command } from 'commander';
 import pc from 'picocolors';
 import { loadCredentials, getIdToken } from '../auth/credentials';
+import { API_BASE } from '../lib/api-client';
 import { printJson } from '../lib/output';
 import { isInteractive } from '../lib/tty';
 import { SYM } from '../lib/symbols';
-
-const API_BASE = process.env.NUMO_API_URL ?? 'http://localhost:3000';
 
 interface CheckResult {
   name: string;
