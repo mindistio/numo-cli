@@ -4,10 +4,9 @@ import { saveCredentials } from './credentials';
 import { promptText, promptPassword } from '../lib/prompts';
 import { Errors, CliError, classifyError } from '../lib/errors';
 import { isInteractive } from '../lib/tty';
+import { API_BASE } from '../lib/api-client';
 import type { AuthResult } from './login';
 import { printSuccess } from './login';
-
-const API_BASE = process.env.NUMO_API_URL ?? 'http://localhost:3000';
 
 // ── Pure helpers ────────────────────────────────────────────────────
 
