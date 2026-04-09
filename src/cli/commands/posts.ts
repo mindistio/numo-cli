@@ -4,7 +4,7 @@ import { runGet, runList, runCreate, runWrite, runDelete } from '../lib/actions'
 import { printRecord } from '../lib/output';
 import { printPaginationHint } from '../lib/pagination';
 import { SYM } from '../lib/symbols';
-import { requireAdmin, isAdmin } from '../lib/uid';
+import { requireUid } from '../lib/uid';
 import { listPosts, getPost, createPost, updatePost, deletePost } from '../services/posts';
 import { listComments, createComment, deleteComment } from '../services/comments';
 import { listReplies, createReply, deleteReply } from '../services/replies';
@@ -217,8 +217,7 @@ Examples:
       });
     });
 
-  // ── Admin-only commands ────────────────────────────────────────────
-  if (isAdmin()) {
+  // ── Write commands (server enforces admin) ────────────────────────
 
   posts
     .command('create')
@@ -228,7 +227,7 @@ Examples:
     .option('--tag <tag>', 'general|hack|story|meme|other|question|hack-tip|activity')
     .action(async function (this: Command) {
       const opts = this.optsWithGlobals();
-      const uid = requireAdmin();
+      const uid = requireUid();
 
       const title = await promptForMissing({ value: opts.title, message: 'Title', placeholder: 'Post title' });
       const postBody = await promptForMissing({ value: opts.body, message: 'Body', placeholder: 'Post body' });
@@ -262,7 +261,7 @@ Examples:
     .option('--tag <tag>')
     .action(async function (this: Command, id?: string) {
       const opts = this.optsWithGlobals();
-      const uid = requireAdmin();
+      const uid = requireUid();
       const postId = await promptForMissing({ value: id, message: 'Post ID' });
 
       const body: Record<string, unknown> = {};
@@ -298,7 +297,7 @@ Examples:
     .command('delete [id]')
     .description('Delete a post')
     .action(async function (this: Command, id?: string) {
-      const uid = requireAdmin();
+      const uid = requireUid();
       const postId = await promptForMissing({ value: id, message: 'Post ID' });
       await runDelete({
         global: this.optsWithGlobals(),
@@ -314,7 +313,7 @@ Examples:
     .option('--text <text>')
     .action(async function (this: Command, postId?: string) {
       const opts = this.optsWithGlobals();
-      const uid = requireAdmin();
+      const uid = requireUid();
       const resolvedPostId = await promptForMissing({ value: postId, message: 'Post ID' });
       const text = await promptForMissing({ value: opts.text, message: 'Comment text', placeholder: 'Your comment' });
       await runCreate({
@@ -332,7 +331,7 @@ Examples:
     .command('comment-delete [postId] [commentId]')
     .description('Delete a comment')
     .action(async function (this: Command, postId?: string, commentId?: string) {
-      const uid = requireAdmin();
+      const uid = requireUid();
       const resolvedPostId = await promptForMissing({ value: postId, message: 'Post ID' });
       const resolvedCommentId = await pickComment(resolvedPostId, commentId);
       await runDelete({
@@ -349,7 +348,7 @@ Examples:
     .option('--text <text>')
     .action(async function (this: Command, postId?: string, commentId?: string) {
       const opts = this.optsWithGlobals();
-      const uid = requireAdmin();
+      const uid = requireUid();
       const resolvedPostId = await promptForMissing({ value: postId, message: 'Post ID' });
       const resolvedCommentId = await pickComment(resolvedPostId, commentId);
       const text = await promptForMissing({ value: opts.text, message: 'Reply text', placeholder: 'Your reply' });
@@ -368,7 +367,7 @@ Examples:
     .command('reply-delete [postId] [commentId] [replyId]')
     .description('Delete a reply')
     .action(async function (this: Command, postId?: string, commentId?: string, replyId?: string) {
-      const uid = requireAdmin();
+      const uid = requireUid();
       const resolvedPostId = await promptForMissing({ value: postId, message: 'Post ID' });
       const resolvedCommentId = await pickComment(resolvedPostId, commentId);
       const resolvedReplyId = await pickReply(resolvedPostId, resolvedCommentId, replyId);
@@ -380,5 +379,4 @@ Examples:
       });
     });
 
-  } // isAdmin
 }
