@@ -2,10 +2,11 @@ import { Command } from 'commander';
 import pc from 'picocolors';
 import { loadCredentials, getIdToken } from '../auth/credentials';
 import { getFirebaseApiKey } from '../lib/config';
-import { getFirestoreBaseUrl } from '../lib/config';
 import { printJson } from '../lib/output';
 import { isInteractive } from '../lib/tty';
 import { SYM } from '../lib/symbols';
+
+const API_BASE = process.env.NUMO_API_URL ?? 'http://localhost:3000';
 
 interface CheckResult {
   name: string;
@@ -53,14 +54,12 @@ async function runChecks(): Promise<CheckResult[]> {
     message: apiKey ? 'Firebase API key configured' : 'NUMO_FIREBASE_API_KEY not set',
   });
 
-  // 5. Firebase reachable
+  // 5. API server reachable
   try {
-    const baseUrl = getFirestoreBaseUrl();
-    const resp = await fetch(baseUrl, { signal: AbortSignal.timeout(5000) });
-    // Any HTTP response (even 401) means Firebase is reachable
-    checks.push({ name: 'firebase_reachable', status: 'ok', message: `Firebase reachable (HTTP ${resp.status})` });
+    const resp = await fetch(`${API_BASE}/api/health`, { signal: AbortSignal.timeout(5000) });
+    checks.push({ name: 'api_reachable', status: 'ok', message: `API server reachable (HTTP ${resp.status})` });
   } catch (err: any) {
-    checks.push({ name: 'firebase_reachable', status: 'fail', message: `Firebase unreachable: ${err.message}` });
+    checks.push({ name: 'api_reachable', status: 'fail', message: `API server unreachable: ${err.message}` });
   }
 
   return checks;

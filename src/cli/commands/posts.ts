@@ -8,10 +8,11 @@ import { requireAdmin, isAdmin } from '../lib/uid';
 import { listPosts, getPost, createPost, updatePost, deletePost } from '../services/posts';
 import { listComments, createComment, deleteComment } from '../services/comments';
 import { listReplies, createReply, deleteReply } from '../services/replies';
-import { POST_TAGS } from '../../shared';
+import { POST_TAGS } from '../types/api';
 import { formatRelativeDate, truncate } from '../lib/format';
 import { promptForMissing, promptSelect, promptText } from '../lib/prompts';
 import { isInteractive } from '../lib/tty';
+import type { ApiPost, ApiComment, ApiReply, PostListResponse, CommentListResponse, ReplyListResponse, PostCreateResponse, PostUpdateResponse, CommentCreateResponse, ReplyCreateResponse } from '../types/api';
 
 async function pickComment(postId: string, commentId: string | undefined): Promise<string> {
   if (commentId) return commentId;
@@ -23,8 +24,8 @@ async function pickComment(postId: string, commentId: string | undefined): Promi
   return promptSelect<string>({
     message: 'Select comment',
     options: comments.map((c) => ({
-      value: c.id as string,
-      label: `${truncate(String(c.text ?? ''), 60)}  ${pc.dim(String(c.authorName ?? c.userId ?? ''))}`,
+      value: c.id,
+      label: `${truncate(c.text ?? '', 60)}  ${pc.dim(c.authorName ?? c.userId ?? '')}`,
     })),
   });
 }
@@ -39,18 +40,18 @@ async function pickReply(postId: string, commentId: string, replyId: string | un
   return promptSelect<string>({
     message: 'Select reply',
     options: replies.map((r) => ({
-      value: r.id as string,
-      label: `${truncate(String(r.text ?? ''), 60)}  ${pc.dim(String(r.userId ?? ''))}`,
+      value: r.id,
+      label: `${truncate(r.text ?? '', 60)}  ${pc.dim(r.userId ?? '')}`,
     })),
   });
 }
 
-function printPostLine(p: Record<string, unknown>) {
-  const tag = pc.cyan(String(p.tag ?? ''));
-  const title = truncate(String(p.title ?? ''), 55);
+function printPostLine(p: ApiPost) {
+  const tag = pc.cyan(p.tag ?? '');
+  const title = truncate(p.title, 55);
   const comments = p.commentsCount ? pc.dim(`${p.commentsCount} comments`) : '';
-  const time = formatRelativeDate(p.createdAt as number);
-  const id = pc.dim(String(p.id ?? ''));
+  const time = formatRelativeDate(p.createdAt);
+  const id = pc.dim(p.id);
 
   const parts = [tag, pc.bold(title)];
   if (comments) parts.push(comments);
@@ -60,40 +61,40 @@ function printPostLine(p: Record<string, unknown>) {
   console.log('  ' + parts.join('  '));
 }
 
-function printPostDetail(p: Record<string, unknown>) {
+function printPostDetail(p: ApiPost) {
   console.log('');
-  console.log(`  ${pc.bold(p.title as string)}`);
+  console.log(`  ${pc.bold(p.title)}`);
   if (p.body) {
     console.log(`  ${pc.dim(SYM.dash.repeat(40))}`);
     console.log(`  ${p.body}`);
   }
   console.log(`  ${pc.dim(SYM.dash.repeat(40))}`);
   printRecord([
-    ['ID', pc.dim(p.id as string)],
-    ['Tag', pc.cyan(String(p.tag ?? ''))],
+    ['ID', pc.dim(p.id)],
+    ['Tag', pc.cyan(p.tag ?? '')],
     ['Author', p.authorName ?? p.authorId],
     ['Comments', p.commentsCount != null ? String(p.commentsCount) : null],
     ['Likes', p.likesCount != null ? String(p.likesCount) : null],
-    ['Created', formatRelativeDate(p.createdAt as number)],
+    ['Created', formatRelativeDate(p.createdAt)],
   ]);
   console.log('');
 }
 
-function printCommentLine(c: Record<string, unknown>) {
-  const author = pc.bold(String(c.authorName ?? c.userId ?? ''));
-  const time = pc.dim(formatRelativeDate(c.createdAt as number));
+function printCommentLine(c: ApiComment) {
+  const author = pc.bold(c.authorName ?? c.userId ?? '');
+  const time = pc.dim(formatRelativeDate(c.createdAt));
   const replies = c.repliesCount ? pc.dim(`· ${c.repliesCount} replies`) : '';
-  const text = String(c.text ?? '');
+  const text = c.text ?? '';
 
   console.log(`  ${author}  ${time}${replies}`);
   console.log(`  ${text}`);
   console.log('');
 }
 
-function printReplyLine(r: Record<string, unknown>) {
-  const text = truncate(String(r.text ?? ''), 60);
-  const time = formatRelativeDate(r.createdAt as number);
-  const id = pc.dim(String(r.id ?? ''));
+function printReplyLine(r: ApiReply) {
+  const text = truncate(r.text ?? '', 60);
+  const time = formatRelativeDate(r.createdAt);
+  const id = pc.dim(r.id);
 
   console.log(`  ${text}  ${pc.dim(time)}  ${id}`);
 }
@@ -115,8 +116,8 @@ export function registerPostsCommands(program: Command) {
         dataKey: 'posts',
         columns: ['id', 'title', 'tag', 'authorId', 'createdAt'],
         spinnerMessage: 'Fetching posts...',
-        onInteractive: (payload) => {
-          const items = payload.posts as Record<string, unknown>[];
+        onInteractive: (payload: PostListResponse) => {
+          const items = payload.posts;
           if (items.length === 0) {
             console.log(pc.dim('  No posts found.'));
             return;
@@ -126,7 +127,7 @@ export function registerPostsCommands(program: Command) {
             printPostLine(p);
           }
           printPaginationHint({
-            nextCursor: payload.nextCursor as string | undefined,
+            nextCursor: payload.nextCursor,
             command: 'posts list',
             limit: opts.limit,
           });
@@ -171,8 +172,8 @@ Examples:
         dataKey: 'comments',
         columns: ['id', 'userId', 'text', 'createdAt'],
         spinnerMessage: 'Fetching comments...',
-        onInteractive: (payload) => {
-          const items = payload.comments as Record<string, unknown>[];
+        onInteractive: (payload: CommentListResponse) => {
+          const items = payload.comments;
           if (items.length === 0) {
             console.log(pc.dim('  No comments yet.'));
             return;
@@ -201,8 +202,8 @@ Examples:
         dataKey: 'replies',
         columns: ['id', 'userId', 'text', 'createdAt'],
         spinnerMessage: 'Fetching replies...',
-        onInteractive: (payload) => {
-          const items = payload.replies as Record<string, unknown>[];
+        onInteractive: (payload: ReplyListResponse) => {
+          const items = payload.replies;
           if (items.length === 0) {
             console.log(pc.dim('  No replies yet.'));
             return;
@@ -247,8 +248,8 @@ Examples:
         fn: () => createPost(uid, body),
         dataKey: 'post',
         spinnerMessage: 'Creating post...',
-        onInteractive: (post) => {
-          console.log(`\n  ${pc.green('Posted!')} ${post.title}  ${pc.dim(post.id as string)}\n`);
+        onInteractive: (post, payload: PostCreateResponse) => {
+          console.log(`\n  ${pc.green('Posted!')} ${payload.post.title}  ${pc.dim(payload.post.id)}\n`);
         },
       });
     });
@@ -287,8 +288,8 @@ Examples:
         fn: () => updatePost(uid, postId, body),
         dataKey: 'post',
         spinnerMessage: 'Updating post...',
-        onInteractive: (post) => {
-          console.log(`\n  ${pc.green('Updated!')} ${post.title}  ${pc.dim(post.id as string)}\n`);
+        onInteractive: (payload: PostUpdateResponse) => {
+          console.log(`\n  ${pc.green('Updated!')} ${payload.post.title}  ${pc.dim(payload.post.id)}\n`);
         },
       });
     });
@@ -321,8 +322,8 @@ Examples:
         fn: () => createComment(uid, resolvedPostId, text),
         dataKey: 'comment',
         spinnerMessage: 'Adding comment...',
-        onInteractive: (comment) => {
-          console.log(`\n  ${pc.green('Commented!')} ${truncate(String(comment.text ?? ''), 50)}  ${pc.dim(comment.id as string)}\n`);
+        onInteractive: (comment, payload: CommentCreateResponse) => {
+          console.log(`\n  ${pc.green('Commented!')} ${truncate(payload.comment.text ?? '', 50)}  ${pc.dim(payload.comment.id)}\n`);
         },
       });
     });
@@ -357,8 +358,8 @@ Examples:
         fn: () => createReply(uid, resolvedPostId, resolvedCommentId, text),
         dataKey: 'reply',
         spinnerMessage: 'Adding reply...',
-        onInteractive: (reply) => {
-          console.log(`\n  ${pc.green('Replied!')} ${truncate(String(reply.text ?? ''), 50)}  ${pc.dim(reply.id as string)}\n`);
+        onInteractive: (reply, payload: ReplyCreateResponse) => {
+          console.log(`\n  ${pc.green('Replied!')} ${truncate(payload.reply.text ?? '', 50)}  ${pc.dim(payload.reply.id)}\n`);
         },
       });
     });

@@ -8,11 +8,11 @@ import { formatDate, formatTags, formatPriority, formatDifficulty, formatDuratio
 import { promptForMissing, promptText, promptConfirm, promptSelect, promptMultiSelect } from '../lib/prompts';
 import { isInteractive } from '../lib/tty';
 import { SYM } from '../lib/symbols';
-import { getCompletedTodayCount } from '../lib/streaks';
 import { Errors } from '../lib/errors';
 import { parseHumanDate, parseHumanDateOnly } from '../lib/parse-date';
 import { readStdinLines } from '../lib/stdin';
 import { printNdjsonLine } from '../lib/output';
+import type { ApiTask, TaskListResponse, TaskCreateResponse, TaskUpdateResponse, TaskDeleteResponse, TaskCompleteResponse, TaskUncompleteResponse } from '../types/api';
 
 async function pickTask(uid: string, id: string | undefined, actionName: string): Promise<string> {
   if (id) return id;
@@ -32,8 +32,8 @@ async function pickTask(uid: string, id: string | undefined, actionName: string)
   const selected = await promptSelect({
     message: `Select task to ${actionName}`,
     options: pending.map((t) => ({
-      value: t.id as string,
-      label: `${truncate(String(t.text), 50)}  ${pc.dim(String(t.id))}`,
+      value: t.id,
+      label: `${truncate(t.text, 50)}  ${pc.dim(t.id)}`,
     })),
   });
 
@@ -62,18 +62,17 @@ function extractTime(dueDate: unknown): string {
   return time === '00:00' ? '' : time;
 }
 
-function isRepeating(t: Record<string, unknown>): boolean {
-  const repeat = t.repeat as { type?: string } | undefined;
-  return !!repeat?.type && repeat.type !== 'none';
+function isRepeating(t: ApiTask): boolean {
+  return !!t.repeat?.type && t.repeat.type !== 'none';
 }
 
-function getCheckIndicator(t: Record<string, unknown>): string {
+function getCheckIndicator(t: ApiTask): string {
   if (t.completed) return pc.green(SYM.check);
   if (isRepeating(t)) return pc.blue(SYM.repeat);
   return pc.dim(SYM.circle);
 }
 
-function sortTasksForDisplay(tasks: Record<string, unknown>[]): Record<string, unknown>[] {
+function sortTasksForDisplay(tasks: ApiTask[]): ApiTask[] {
   const repeatOrder: Record<string, number> = { daily: 0, weekly: 1, monthly: 2 };
 
   return [...tasks].sort((a, b) => {
@@ -91,8 +90,8 @@ function sortTasksForDisplay(tasks: Record<string, unknown>[]): Record<string, u
     if (repA && !repB) return -1;
     if (!repA && repB) return 1;
     if (repA && repB) {
-      const ra = (a.repeat as { type?: string })?.type ?? '';
-      const rb = (b.repeat as { type?: string })?.type ?? '';
+      const ra = a.repeat.type ?? '';
+      const rb = b.repeat.type ?? '';
       return (repeatOrder[ra] ?? 99) - (repeatOrder[rb] ?? 99);
     }
 
@@ -101,13 +100,13 @@ function sortTasksForDisplay(tasks: Record<string, unknown>[]): Record<string, u
   });
 }
 
-function printTaskDetail(t: Record<string, unknown>) {
+function printTaskDetail(t: ApiTask) {
   const dim = pc.dim;
   console.log('');
   printRecord([
-    ['ID', dim(t.id as string)],
+    ['ID', dim(t.id)],
     ['Text', t.text],
-    ['Due', formatDate(t.dueDate as number | string | null) || dim('none (backlog)')],
+    ['Due', formatDate(t.dueDate) || dim('none (backlog)')],
     ['Status', t.completed ? pc.green('completed') : pc.yellow('pending')],
     ['Tags', formatTags(t.tags) || dim('none')],
     ['Difficulty', formatDifficulty(t.difficulty) || dim('not set')],
@@ -116,19 +115,19 @@ function printTaskDetail(t: Record<string, unknown>) {
     ['Note', t.note || dim('none')],
     ['Public', t.isPublic ? pc.green('yes') : pc.yellow('no')],
     ['Completions', String(t.completions ?? 0)],
-    ['Created', formatDate(t.createdAt as number)],
+    ['Created', formatDate(t.createdAt)],
   ]);
   console.log('');
 }
 
-function printTaskLine(t: Record<string, unknown>) {
+function printTaskLine(t: ApiTask) {
   const check = getCheckIndicator(t);
-  const rawText = truncate(String(t.text ?? ''), 50);
+  const rawText = truncate(t.text, 50);
   const text = t.completed ? pc.strikethrough(pc.dim(rawText)) : rawText;
   const time = extractTime(t.dueDate);
   const tags = formatTags(t.tags);
   const difficulty = formatDifficulty(t.difficulty);
-  const id = pc.dim(String(t.id ?? ''));
+  const id = pc.dim(t.id);
 
   const parts = [check, text];
   if (time) parts.push(pc.cyan(time));
@@ -161,8 +160,8 @@ export function registerTasksCommands(program: Command) {
         dataKey: 'tasks',
         columns: ['id', 'text', 'dueDate', 'completed', 'tags', 'priority'],
         spinnerMessage: 'Fetching tasks...',
-        onInteractive: (payload) => {
-          const items = payload.tasks as Record<string, unknown>[];
+        onInteractive: (payload: TaskListResponse) => {
+          const items = payload.tasks;
           const pending = sortTasksForDisplay(items.filter((t) => !t.completed));
           const completed = items.filter((t) => t.completed);
 
@@ -172,8 +171,7 @@ export function registerTasksCommands(program: Command) {
             console.log(`  ${pc.bold('Backlog')} ${pc.dim(`(${items.length})`)}`);
           } else {
             const viewDate = date ? new Date(date + 'T00:00:00') : new Date();
-            const streakCount = getCompletedTodayCount();
-            console.log(formatWeekdayHeader(viewDate, streakCount));
+            console.log(formatWeekdayHeader(viewDate, completed.length));
           }
 
           // Tag summary
@@ -402,13 +400,12 @@ Examples:
         fn: () => createTask(uid, body),
         dataKey: 'task',
         spinnerMessage: 'Creating task...',
-        onInteractive: (_task, payload) => {
-          const task = payload.task as Record<string, unknown>;
+        onInteractive: (_task, payload: TaskCreateResponse) => {
+          const { task, karma } = payload;
           const check = pc.green(SYM.check);
           console.log(`\n  ${check} Created  ${task.text}`);
-          const karma = payload.karma as number | undefined;
           if (karma) {
-            console.log(`    ${formatKarmaGain(karma)}${' '.repeat(20)}${pc.dim(task.id as string)}`);
+            console.log(`    ${formatKarmaGain(karma)}${' '.repeat(20)}${pc.dim(task.id)}`);
           }
           console.log('');
         },
@@ -485,8 +482,8 @@ Examples:
         fn: () => updateTask(uid, taskId, body),
         dataKey: 'task',
         spinnerMessage: 'Updating task...',
-        onInteractive: (task) => {
-          console.log(`\n  ${pc.green('Updated!')} ${task.text}  ${pc.dim(task.id as string)}\n`);
+        onInteractive: (payload: TaskUpdateResponse) => {
+          console.log(`\n  ${pc.green('Updated!')} ${payload.task.text}  ${pc.dim(payload.task.id)}\n`);
         },
       });
     })
@@ -526,7 +523,7 @@ Examples:
         let taskText = taskId;
         try {
           const task = await getTask(uid, taskId);
-          taskText = String(task.text ?? taskId);
+          taskText = task.text ?? taskId;
         } catch { /* use ID if fetch fails */ }
 
         const confirmed = await promptConfirm({
@@ -543,10 +540,9 @@ Examples:
         global: opts,
         fn: () => deleteTask(uid, taskId),
         spinnerMessage: 'Deleting task...',
-        onInteractive: (data) => {
+        onInteractive: (data: TaskDeleteResponse) => {
           const cross = pc.red(SYM.cross);
-          const text = data.taskText || taskId;
-          console.log(`\n  ${cross} Deleted  ${text}`);
+          console.log(`\n  ${cross} Deleted  ${data.taskText || taskId}`);
           if (data.archived) console.log(`    ${pc.dim('Archived')}`);
           console.log('');
         },
@@ -585,14 +581,11 @@ Examples:
         global: opts,
         fn: () => completeTask(uid, taskId, opts.date),
         spinnerMessage: 'Completing task...',
-        onInteractive: (data) => {
+        onInteractive: (data: TaskCompleteResponse) => {
           const check = pc.green(SYM.check);
-          const text = data.taskText ?? taskId;
-          console.log(`\n  ${check} Done!  ${text}`);
-          const karma = data.karma as number | undefined;
-          const checksInRow = data.checksInRow as number | undefined;
-          if (karma) {
-            console.log(`    ${formatKarmaGain(karma, checksInRow)}`);
+          console.log(`\n  ${check} Done!  ${data.taskText ?? taskId}`);
+          if (data.karma) {
+            console.log(`    ${formatKarmaGain(data.karma, data.checksInRow)}`);
           }
           console.log('');
         },
@@ -630,10 +623,9 @@ Examples:
         fn: () => uncompleteTask(uid, taskId),
         dataKey: 'task',
         spinnerMessage: 'Uncompleting task...',
-        onInteractive: (data) => {
+        onInteractive: (data: TaskUncompleteResponse) => {
           const arrow = SYM.undo;
-          const text = data.text ?? taskId;
-          console.log(`\n  ${pc.yellow(arrow)} Reverted  ${text}`);
+          console.log(`\n  ${pc.yellow(arrow)} Reverted  ${data.task.text ?? taskId}`);
           console.log(`    ${pc.dim('Karma adjustment applied')}`);
           console.log('');
         },

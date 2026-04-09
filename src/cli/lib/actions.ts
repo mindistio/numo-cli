@@ -18,11 +18,11 @@ function useSpinner(opts: GlobalOpts): boolean {
 /**
  * Run an async function that returns a single record and output it.
  */
-export async function runGet(opts: {
+export async function runGet<T>(opts: {
   global: GlobalOpts;
-  fn: () => Promise<Record<string, unknown>>;
+  fn: () => Promise<T>;
   spinnerMessage?: string;
-  onInteractive?: (data: Record<string, unknown>) => void;
+  onInteractive?: (data: T) => void;
 }): Promise<void> {
   try {
     const result = await withSpinner(
@@ -31,11 +31,11 @@ export async function runGet(opts: {
       opts.fn,
     );
     if (useJson(opts.global)) {
-      printJson(selectFields(result, opts.global.json));
+      printJson(selectFields(result as Record<string, unknown>, opts.global.json));
     } else if (opts.onInteractive) {
       opts.onInteractive(result);
     } else {
-      outputResult(result, false);
+      outputResult(result as Record<string, unknown>, false);
     }
   } catch (err) {
     outputError(err, useJson(opts.global));
@@ -45,13 +45,13 @@ export async function runGet(opts: {
 /**
  * Run an async function that returns a list payload and output as table or JSON.
  */
-export async function runList(opts: {
+export async function runList<T>(opts: {
   global: GlobalOpts;
-  fn: () => Promise<Record<string, unknown>>;
+  fn: () => Promise<T>;
   dataKey: string;
   columns: string[];
   spinnerMessage?: string;
-  onInteractive?: (payload: Record<string, unknown>) => void;
+  onInteractive?: (payload: T) => void;
 }): Promise<void> {
   try {
     const payload = await withSpinner(
@@ -61,14 +61,14 @@ export async function runList(opts: {
     );
 
     if (useJson(opts.global)) {
-      printJson(selectFields(payload, opts.global.json));
+      printJson(selectFields(payload as Record<string, unknown>, opts.global.json));
     } else if (opts.onInteractive) {
       opts.onInteractive(payload);
     } else {
-      const items = payload[opts.dataKey];
+      const items = (payload as Record<string, unknown>)[opts.dataKey];
       printTable(items as Record<string, unknown>[], opts.columns);
-      if (payload.nextCursor) {
-        console.log(`\nNext cursor: ${payload.nextCursor}`);
+      if ((payload as Record<string, unknown>).nextCursor) {
+        console.log(`\nNext cursor: ${(payload as Record<string, unknown>).nextCursor}`);
       }
     }
   } catch (err) {
@@ -79,13 +79,13 @@ export async function runList(opts: {
 /**
  * Run an async function that creates a resource.
  */
-export async function runCreate(opts: {
+export async function runCreate<T>(opts: {
   global: GlobalOpts;
-  fn: () => Promise<Record<string, unknown>>;
+  fn: () => Promise<T>;
   dataKey: string;
   successMessage?: (data: Record<string, unknown>) => string;
   spinnerMessage?: string;
-  onInteractive?: (data: Record<string, unknown>, payload: Record<string, unknown>) => void;
+  onInteractive?: (data: Record<string, unknown>, payload: T) => void;
 }): Promise<void> {
   try {
     const payload = await withSpinner(
@@ -93,10 +93,10 @@ export async function runCreate(opts: {
       opts.spinnerMessage ?? 'Creating...',
       opts.fn,
     );
-    const item = payload[opts.dataKey] as Record<string, unknown>;
+    const item = (payload as Record<string, unknown>)[opts.dataKey] as Record<string, unknown>;
 
     if (useJson(opts.global)) {
-      printJson(selectFields(payload, opts.global.json));
+      printJson(selectFields(payload as Record<string, unknown>, opts.global.json));
     } else if (opts.onInteractive) {
       opts.onInteractive(item, payload);
     } else {
@@ -113,13 +113,13 @@ export async function runCreate(opts: {
 /**
  * Run an async function that updates/writes a resource.
  */
-export async function runWrite(opts: {
+export async function runWrite<T>(opts: {
   global: GlobalOpts;
-  fn: () => Promise<Record<string, unknown>>;
+  fn: () => Promise<T>;
   dataKey?: string;
   successMessage?: string;
   spinnerMessage?: string;
-  onInteractive?: (data: Record<string, unknown>) => void;
+  onInteractive?: (data: T) => void;
 }): Promise<void> {
   try {
     const payload = await withSpinner(
@@ -127,12 +127,12 @@ export async function runWrite(opts: {
       opts.spinnerMessage ?? 'Updating...',
       opts.fn,
     );
-    const item = (opts.dataKey ? payload[opts.dataKey] : payload) as Record<string, unknown>;
+    const item = (opts.dataKey ? (payload as Record<string, unknown>)[opts.dataKey] : payload) as Record<string, unknown>;
 
     if (useJson(opts.global)) {
-      printJson(selectFields(payload, opts.global.json));
+      printJson(selectFields(payload as Record<string, unknown>, opts.global.json));
     } else if (opts.onInteractive) {
-      opts.onInteractive(item);
+      opts.onInteractive(payload);
     } else {
       if (opts.successMessage) console.log(opts.successMessage);
       if (item && Object.keys(item).length > 0) {

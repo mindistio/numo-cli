@@ -1,16 +1,4 @@
 import pc from 'picocolors';
-import { Errors } from './errors';
-
-/**
- * Parse and validate --limit flag.
- */
-export function parseLimit(raw: string, min = 1, max = 50): number {
-  const n = parseInt(raw, 10);
-  if (isNaN(n) || n < min || n > max) {
-    throw Errors.invalidInput(`--limit must be between ${min} and ${max}`);
-  }
-  return n;
-}
 
 /**
  * Print a hint for the next page of results.

@@ -33,10 +33,6 @@ export function formatTags(tags: unknown): string {
   return tags.map((t) => pc.cyan(`#${t}`)).join(' ');
 }
 
-export function formatCompleted(completed: unknown): string {
-  return completed ? pc.green(SYM.check) : pc.dim(SYM.circle);
-}
-
 export function formatPriority(p: unknown): string {
   if (p == null || p === 0) return '';
   const n = Number(p);
@@ -106,11 +102,11 @@ export function formatProgressSummary(completed: number, total: number): string 
   return pc.dim(`${completed}/${total} done today`);
 }
 
-export function formatTagsSummary(tasks: Record<string, unknown>[]): string {
+export function formatTagsSummary(tasks: { tags?: string[] }[]): string {
   const counts: Record<string, number> = {};
   for (const t of tasks) {
     if (!Array.isArray(t.tags)) continue;
-    for (const tag of t.tags as string[]) {
+    for (const tag of t.tags) {
       counts[tag] = (counts[tag] ?? 0) + 1;
     }
   }
