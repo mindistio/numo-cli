@@ -1,6 +1,6 @@
 {
   "name": "numo-cli",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "CLI and programmatic API for Numo ADHD planner — create, complete, and manage tasks from the terminal or AI agents",
   "type": "module",
   "bin": {
