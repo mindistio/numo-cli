@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.6.0](https://github.com/mindistio/numo-cli/compare/v1.5.0...v1.6.0) (2026-06-20)
+
+
+### Features
+
+* make numo CLI discoverable and stable for AI agents (W-121) ([817b55e](https://github.com/mindistio/numo-cli/commit/817b55ee3310c456a6c405a0ad0476e19a9ebde2))
+* make numo CLI discoverable and stable for AI agents (W-121) ([c93d48d](https://github.com/mindistio/numo-cli/commit/c93d48d1f0b3c199791bcd51e40926b440f89624))
+
 ## [1.5.0](https://github.com/mindistio/numo-cli/compare/v1.4.0...v1.5.0) (2026-04-09)
 
 
