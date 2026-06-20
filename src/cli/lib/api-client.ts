@@ -1,17 +1,9 @@
 import { getIdToken } from '../auth/credentials';
 import { http, type HttpResponse } from './http';
-import { CliError, ErrorKind, ExitCode } from './errors';
+import { CliError, ErrorKind, ExitCode, sanitizeErrorMessage } from './errors';
+import { API_BASE, assertSafeApiBase } from './api-base';
 
-declare const __API_BASE_URL__: string;
-export const API_BASE = process.env.NUMO_API_URL
-  ?? (typeof __API_BASE_URL__ !== 'undefined' ? __API_BASE_URL__ : 'http://localhost:3000');
-
-// Warn if API URL is HTTP in non-local environments
-if (API_BASE !== 'http://localhost:3000' && API_BASE.startsWith('http://')) {
-  process.stderr.write('[warn] NUMO_API_URL uses HTTP — tokens sent unencrypted. Use HTTPS in production.\n');
-}
-
-// ── Error mapping ───────────────────────────────────────────────────
+export { API_BASE };
 
 const KIND_EXIT: Partial<Record<string, number>> = {
   AUTH_REQUIRED: ExitCode.NO_PERM,
@@ -36,7 +28,6 @@ function toCliError(err: unknown): CliError {
     message?: string;
   };
 
-  // Network-level errors (no response from API)
   if (httpErr.code === 'ECONNABORTED' || httpErr.code === 'ETIMEDOUT') {
     return new CliError(ErrorKind.TIMEOUT, 'Request timed out', ExitCode.TEMP_FAIL, {
       hint: 'The API server took too long to respond.',
@@ -50,25 +41,22 @@ function toCliError(err: unknown): CliError {
     });
   }
 
-  // API returned a structured error response
   const body = httpErr.response?.data as { error?: { kind?: string; message?: string; retryable?: boolean; retryAfter?: number } } | undefined;
   if (body?.error) {
     const e = body.error;
     const kind = (e.kind as ErrorKind) ?? ErrorKind.UNKNOWN;
     const exitCode = KIND_EXIT[kind] ?? ExitCode.GENERAL;
-    return new CliError(kind, e.message ?? 'Unknown error', exitCode, {
+    return new CliError(kind, sanitizeErrorMessage(e.message ?? 'Unknown error'), exitCode, {
       retryable: e.retryable,
       retryAfter: e.retryAfter,
     });
   }
 
-  // Fallback
-  return new CliError(ErrorKind.UNKNOWN, httpErr.message ?? 'Unknown error', ExitCode.GENERAL);
+  return new CliError(ErrorKind.UNKNOWN, sanitizeErrorMessage(httpErr.message ?? 'Unknown error'), ExitCode.GENERAL);
 }
 
-// ── API client ──────────────────────────────────────────────────────
-
 async function apiHeaders(): Promise<Record<string, string>> {
+  assertSafeApiBase();
   const token = await getIdToken();
   return {
     Authorization: `Bearer ${token}`,

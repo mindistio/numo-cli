@@ -23,10 +23,6 @@ export function printTable(rows: Record<string, unknown>[], columns?: string[]) 
   console.log(renderTable(headers, tableRows));
 }
 
-/**
- * Print a record as aligned key-value pairs for interactive mode.
- * Accepts a map of label → value. Null/undefined values are skipped.
- */
 export function printRecord(fields: [string, unknown][]) {
   const visible = fields.filter(([, v]) => v != null && v !== '');
   const maxLabel = Math.max(...visible.map(([l]) => l.length));
@@ -35,32 +31,20 @@ export function printRecord(fields: [string, unknown][]) {
   }
 }
 
-/**
- * Output a result. Interactive mode pretty-prints JSON; pipe/--json outputs raw JSON.
- */
 export function outputResult(data: unknown, asJson: boolean) {
-  if (asJson) {
-    printJson(data);
-  } else if (typeof data === 'string') {
+  if (!asJson && typeof data === 'string') {
     console.log(data);
-  } else {
-    printJson(data);
+    return;
   }
+  printJson(data);
 }
 
-/**
- * Pick only specified fields from an object.
- */
 function pickFields(obj: Record<string, unknown>, fields: string[]): Record<string, unknown> {
   const result: Record<string, unknown> = {};
   for (const f of fields) { if (f in obj) result[f] = obj[f]; }
   return result;
 }
 
-/**
- * Select specific fields from data when --json is used with field names.
- * If fields is true or undefined, returns data unchanged.
- */
 export function selectFields(data: unknown, fields: string | boolean | undefined): unknown {
   if (!fields || fields === true) return data;
   const fieldList = (fields as string).split(',').map(f => f.trim());
@@ -83,10 +67,6 @@ export function selectFields(data: unknown, fields: string | boolean | undefined
   return data;
 }
 
-/**
- * Output an error and exit. Returns `never`.
- * Classifies errors into structured CliError with kind, exit code, and suggestions.
- */
 export function outputError(err: unknown, asJson: boolean): never {
   const structured = classifyError(err);
 

@@ -1,23 +1,16 @@
-import { isInteractive } from './tty';
 import { printTable, printJson, outputResult, outputError, selectFields } from './output';
 import { withSpinner } from './spinner';
+import { isQuietMode } from './quiet';
 
 export interface GlobalOpts {
   json?: boolean | string;
   quiet?: boolean;
 }
 
-function useJson(opts: GlobalOpts): boolean {
-  return !!(opts.json || opts.quiet || !isInteractive());
-}
+const useJson = isQuietMode;
+// Spinner only in pure interactive mode — never in --json/--quiet/piped (keeps stdout clean).
+const useSpinner = (opts: GlobalOpts): boolean => !isQuietMode(opts);
 
-function useSpinner(opts: GlobalOpts): boolean {
-  return isInteractive() && !opts.quiet;
-}
-
-/**
- * Run an async function that returns a single record and output it.
- */
 export async function runGet<T>(opts: {
   global: GlobalOpts;
   fn: () => Promise<T>;
@@ -42,9 +35,6 @@ export async function runGet<T>(opts: {
   }
 }
 
-/**
- * Run an async function that returns a list payload and output as table or JSON.
- */
 export async function runList<T>(opts: {
   global: GlobalOpts;
   fn: () => Promise<T>;
@@ -76,9 +66,6 @@ export async function runList<T>(opts: {
   }
 }
 
-/**
- * Run an async function that creates a resource.
- */
 export async function runCreate<T>(opts: {
   global: GlobalOpts;
   fn: () => Promise<T>;
@@ -110,9 +97,6 @@ export async function runCreate<T>(opts: {
   }
 }
 
-/**
- * Run an async function that updates/writes a resource.
- */
 export async function runWrite<T>(opts: {
   global: GlobalOpts;
   fn: () => Promise<T>;
@@ -144,25 +128,3 @@ export async function runWrite<T>(opts: {
   }
 }
 
-/**
- * Run an async function that deletes a resource.
- */
-export async function runDelete(opts: {
-  global: GlobalOpts;
-  fn: () => Promise<void>;
-  successMessage: string;
-  spinnerMessage?: string;
-}): Promise<void> {
-  try {
-    await withSpinner(
-      useSpinner(opts.global),
-      opts.spinnerMessage ?? 'Deleting...',
-      opts.fn,
-    );
-    if (!opts.global.quiet) {
-      console.log(opts.successMessage);
-    }
-  } catch (err) {
-    outputError(err, useJson(opts.global));
-  }
-}

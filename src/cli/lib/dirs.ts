@@ -20,7 +20,6 @@ export function getConfigDir(): string {
   const xdgHome = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config');
   const xdgDir = path.join(xdgHome, 'numo');
 
-  // If XDG dir exists, use it
   if (fs.existsSync(xdgDir)) return xdgDir;
 
   // If legacy dir exists but XDG does not, use legacy (until migrated)

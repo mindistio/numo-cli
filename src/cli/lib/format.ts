@@ -33,14 +33,6 @@ export function formatTags(tags: unknown): string {
   return tags.map((t) => pc.cyan(`#${t}`)).join(' ');
 }
 
-export function formatPriority(p: unknown): string {
-  if (p == null || p === 0) return '';
-  const n = Number(p);
-  if (n >= 0.7) return pc.red(`!!! ${n}`);
-  if (n >= 0.4) return pc.yellow(`!! ${n}`);
-  return pc.dim(`! ${n}`);
-}
-
 export function formatDifficulty(d: unknown): string {
   if (d == null) return '';
   const labels = ['S', 'M', 'L', 'XL'];

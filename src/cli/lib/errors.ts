@@ -1,5 +1,3 @@
-// ── Error Kinds (machine-readable) ──────────────────────────────────
-
 export enum ErrorKind {
   AUTH_REQUIRED = 'AUTH_REQUIRED',
   AUTH_EXPIRED = 'AUTH_EXPIRED',
@@ -17,8 +15,6 @@ export enum ErrorKind {
   UNKNOWN = 'UNKNOWN',
 }
 
-// ── Exit Codes (BSD sysexits + custom) ──────────────────────────────
-
 export const ExitCode = {
   OK: 0,
   GENERAL: 1,
@@ -30,8 +26,6 @@ export const ExitCode = {
   NOT_FOUND: 100,
   CONFLICT: 101,
 } as const;
-
-// ── CliError class ──────────────────────────────────────────────────
 
 export class CliError extends Error {
   constructor(
@@ -64,8 +58,6 @@ export class CliError extends Error {
     };
   }
 }
-
-// ── Factory Helpers ─────────────────────────────────────────────────
 
 export const Errors = {
   authRequired: () =>
@@ -111,8 +103,6 @@ export const Errors = {
       retryAfter,
     }),
 };
-
-// ── Axios Error Classifier ──────────────────────────────────────────
 
 export function classifyError(err: unknown): CliError {
   if (err instanceof CliError) return err;
@@ -162,10 +152,12 @@ export function classifyError(err: unknown): CliError {
   return new CliError(ErrorKind.UNKNOWN, message, ExitCode.GENERAL, { cause: err });
 }
 
-/** Strip URLs, long tokens, and internal paths from error messages. */
-function sanitizeErrorMessage(msg: string): string {
+export function sanitizeErrorMessage(msg: string): string {
   return msg
     .replace(/https?:\/\/\S+/g, '<url>')
     .replace(/\/(?:Users|home|var|tmp)\/\S+/g, '<path>')
-    .replace(/[A-Za-z0-9_-]{40,}/g, '<token>');
+    .replace(/\beyJ[\w-]+\.[\w-]+\.[\w-]+\b/g, '<jwt>')
+    .replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, '<email>')
+    // 32+ char threshold avoids masking task IDs (which are shorter, underscore-delimited).
+    .replace(/[A-Za-z0-9_=+/-]{32,}/g, '<token>');
 }

@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as crypto from 'crypto';
 import { ensureConfigDir, getCredentialsPath } from '../lib/dirs';
+import { assertSafeApiBase } from '../lib/api-base';
 
 interface Credentials {
   refreshToken: string;
@@ -12,7 +13,11 @@ interface Credentials {
 
 export function loadCredentials(): Credentials | null {
   try {
-    const data = JSON.parse(fs.readFileSync(getCredentialsPath(), 'utf8'));
+    const path = getCredentialsPath();
+    if (process.platform !== 'win32' && (fs.statSync(path).mode & 0o077)) {
+      process.stderr.write(`[warn] credentials file is group/other-readable. Run: chmod 600 ${path}\n`);
+    }
+    const data = JSON.parse(fs.readFileSync(path, 'utf8'));
     if (
       typeof data?.refreshToken !== 'string' ||
       typeof data?.uid !== 'string' ||
@@ -28,7 +33,10 @@ export function loadCredentials(): Credentials | null {
 
 export function saveCredentials(creds: Credentials) {
   ensureConfigDir();
-  fs.writeFileSync(getCredentialsPath(), JSON.stringify(creds, null, 2), { mode: 0o600 });
+  const path = getCredentialsPath();
+  fs.writeFileSync(path, JSON.stringify(creds, null, 2), { mode: 0o600 });
+  // writeFileSync's mode only applies on creation — force-tighten a pre-existing file.
+  if (process.platform !== 'win32') fs.chmodSync(path, 0o600);
 }
 
 export function clearCredentials() {
@@ -57,10 +65,8 @@ export async function getIdToken(): Promise<string> {
     return creds.idToken;
   }
 
-  // If a refresh is already in flight, wait for it
   if (refreshInFlight) return refreshInFlight;
 
-  // Start refresh and store the promise
   refreshInFlight = performRefresh(creds).finally(() => {
     refreshInFlight = null;
   });
@@ -69,6 +75,7 @@ export async function getIdToken(): Promise<string> {
 }
 
 async function performRefresh(creds: Credentials): Promise<string> {
+  assertSafeApiBase();
   const { API_BASE: apiBase } = await import('../lib/api-client');
 
   const { http } = await import('../lib/http');

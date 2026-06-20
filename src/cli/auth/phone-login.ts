@@ -3,11 +3,13 @@ import pc from 'picocolors';
 import { Errors } from '../lib/errors';
 import { promptText } from '../lib/prompts';
 import { API_BASE } from '../lib/api-client';
+import { assertSafeApiBase } from '../lib/api-base';
 import type { AuthResult } from './login';
 const POLL_INTERVAL = 2000;
 const POLL_TIMEOUT = 5 * 60 * 1000; // 5 minutes
 
 export async function authenticateWithPhone(spinner: { start: (msg?: string) => void; stop: (msg?: string) => void }): Promise<AuthResult> {
+  assertSafeApiBase();
   const p = await import('@clack/prompts');
 
   const phone = await promptText({
@@ -38,7 +40,6 @@ export async function authenticateWithPhone(spinner: { start: (msg?: string) => 
 
   spinner.start('Waiting for verification in browser...');
 
-  // Poll until verified or timeout
   const deadline = Date.now() + POLL_TIMEOUT;
   while (Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, POLL_INTERVAL));

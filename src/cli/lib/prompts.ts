@@ -1,4 +1,5 @@
 import { isInteractive } from './tty';
+import { CliError, ErrorKind, ExitCode } from './errors';
 
 // @clack/prompts is ESM-only, use dynamic import
 async function loadClack() {
@@ -11,7 +12,12 @@ export async function promptText(opts: {
   required?: boolean;
 }): Promise<string> {
   if (!isInteractive()) {
-    throw new Error(`Missing required input: ${opts.message}. Use flags in non-interactive mode.`);
+    throw new CliError(
+      ErrorKind.MISSING_ARGUMENT,
+      `Missing required input: ${opts.message}`,
+      ExitCode.USAGE,
+      { hint: 'Use flags in non-interactive mode.' },
+    );
   }
 
   const p = await loadClack();
@@ -32,7 +38,12 @@ export async function promptPassword(opts: {
   message: string;
 }): Promise<string> {
   if (!isInteractive()) {
-    throw new Error(`Missing required input: ${opts.message}. Use flags in non-interactive mode.`);
+    throw new CliError(
+      ErrorKind.MISSING_ARGUMENT,
+      `Missing required input: ${opts.message}`,
+      ExitCode.USAGE,
+      { hint: 'Use flags in non-interactive mode.' },
+    );
   }
 
   const p = await loadClack();
@@ -53,10 +64,16 @@ export async function promptSelect<T extends string>(opts: {
   options: { value: T; label: string }[];
 }): Promise<T> {
   if (!isInteractive()) {
-    throw new Error(`Missing required input: ${opts.message}. Use flags in non-interactive mode.`);
+    throw new CliError(
+      ErrorKind.MISSING_ARGUMENT,
+      `Missing required input: ${opts.message}`,
+      ExitCode.USAGE,
+      { hint: 'Use flags in non-interactive mode.' },
+    );
   }
 
   const p = await loadClack();
+  // Cast: @clack's Option<T> shape doesn't accept our {value,label} literal cleanly.
   const value = await (p.select as Function)({
     message: opts.message,
     options: opts.options,
@@ -96,7 +113,12 @@ export async function promptMultiSelect<T extends string>(opts: {
   required?: boolean;
 }): Promise<T[]> {
   if (!isInteractive()) {
-    throw new Error(`Missing required input: ${opts.message}. Use flags in non-interactive mode.`);
+    throw new CliError(
+      ErrorKind.MISSING_ARGUMENT,
+      `Missing required input: ${opts.message}`,
+      ExitCode.USAGE,
+      { hint: 'Use flags in non-interactive mode.' },
+    );
   }
 
   const p = await loadClack();

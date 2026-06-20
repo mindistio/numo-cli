@@ -1,21 +1,64 @@
 import { Command } from 'commander';
 import pc from 'picocolors';
+import { promises as dns } from 'dns';
+import { isIP } from 'net';
+import tls from 'tls';
 import { loadCredentials, getIdToken } from '../auth/credentials';
 import { API_BASE } from '../lib/api-client';
+import { classifyApiBase } from '../lib/api-base';
 import { printJson } from '../lib/output';
-import { isInteractive } from '../lib/tty';
+import { isQuietMode } from '../lib/quiet';
 import { SYM } from '../lib/symbols';
+import { sanitizeErrorMessage } from '../lib/errors';
 
 interface CheckResult {
   name: string;
   status: 'ok' | 'warn' | 'fail';
   message: string;
+  fix?: string;
+}
+
+function errMessage(err: unknown): string {
+  return sanitizeErrorMessage(err instanceof Error ? err.message : String(err));
+}
+
+async function checkDns(hostname: string): Promise<CheckResult> {
+  // A literal IP (loopback, self-hosted) or localhost has nothing to resolve —
+  // dns.resolve() would do an A-record query and fail (ENOTFOUND) on an address.
+  if (isIP(hostname) !== 0 || hostname === 'localhost') {
+    return { name: 'dns', status: 'ok', message: `DNS skipped (${hostname} is a literal address)` };
+  }
+  try {
+    const addrs = await dns.resolve(hostname);
+    return { name: 'dns', status: 'ok', message: `DNS ${hostname} → ${addrs[0]}` };
+  } catch (err: any) {
+    return { name: 'dns', status: 'fail', message: `DNS lookup failed for ${hostname}: ${errMessage(err)}` };
+  }
+}
+
+async function checkTls(hostname: string): Promise<CheckResult> {
+  return new Promise((resolve) => {
+    const socket = tls.connect(
+      { host: hostname, port: 443, timeout: 5000, servername: hostname },
+      () => {
+        const proto = socket.getProtocol() ?? 'unknown';
+        socket.end();
+        resolve({ name: 'tls', status: 'ok', message: `TLS handshake OK (${proto})` });
+      },
+    );
+    socket.on('error', (err: Error) => {
+      resolve({ name: 'tls', status: 'fail', message: `TLS handshake failed: ${errMessage(err)}` });
+    });
+    socket.on('timeout', () => {
+      socket.destroy();
+      resolve({ name: 'tls', status: 'fail', message: 'TLS handshake timed out after 5s' });
+    });
+  });
 }
 
 async function runChecks(): Promise<CheckResult[]> {
   const checks: CheckResult[] = [];
 
-  // 1. Node version
   const nodeVersion = process.version;
   const major = parseInt(nodeVersion.slice(1), 10);
   checks.push({
@@ -24,41 +67,95 @@ async function runChecks(): Promise<CheckResult[]> {
     message: major >= 18 ? `Node ${nodeVersion}` : `Node ${nodeVersion} — requires >= 18`,
   });
 
-  // 2. API URL
+  const verdict = classifyApiBase();
+  if (!verdict.ok) {
+    checks.push({
+      name: 'api_url',
+      status: 'fail',
+      message: verdict.message,
+      fix: 'Use https://api.numo.ai, or export NUMO_ALLOW_CUSTOM_HOST=1 for a self-hosted server',
+    });
+    return checks; // don't probe (or send anything to) an untrusted/invalid host
+  }
+  const apiUrl = new URL(API_BASE);
   checks.push({
     name: 'api_url',
-    status: process.env.NUMO_API_URL ? 'ok' : 'warn',
-    message: process.env.NUMO_API_URL
-      ? `API URL: ${API_BASE}`
-      : `NUMO_API_URL not set (using default: ${API_BASE})`,
+    status: verdict.insecure ? 'warn' : process.env.NUMO_API_URL ? 'ok' : 'warn',
+    message: verdict.insecure
+      ? `API URL: ${API_BASE} (HTTP — tokens unencrypted)`
+      : process.env.NUMO_API_URL
+        ? `API URL: ${API_BASE}`
+        : `NUMO_API_URL not set (using default: ${API_BASE})`,
   });
 
-  // 3. Credentials
+  checks.push(await checkDns(apiUrl.hostname));
+
+  if (apiUrl.protocol === 'https:') {
+    checks.push(await checkTls(apiUrl.hostname));
+  }
+
   const creds = loadCredentials();
   checks.push({
     name: 'credentials',
     status: creds ? 'ok' : 'fail',
-    message: creds ? `Logged in as ${creds.email}` : 'Not logged in (run: numo login)',
+    message: creds ? `Logged in as ${creds.email}` : 'Not logged in',
+    fix: creds ? undefined : 'numo login',
   });
 
-  // 4. Token refresh
   if (creds) {
     try {
       await getIdToken();
       checks.push({ name: 'token', status: 'ok', message: 'Token valid / refreshed' });
-    } catch (err: any) {
-      checks.push({ name: 'token', status: 'fail', message: `Token refresh failed: ${err.message}` });
+    } catch (err: unknown) {
+      checks.push({
+        name: 'token',
+        status: 'fail',
+        message: `Token refresh failed: ${errMessage(err)}`,
+        fix: 'numo login',
+      });
     }
   } else {
     checks.push({ name: 'token', status: 'fail', message: 'Skipped (no credentials)' });
   }
 
-  // 5. API server reachable
   try {
     const resp = await fetch(`${API_BASE}/api/health`, { signal: AbortSignal.timeout(5000) });
-    checks.push({ name: 'api_reachable', status: 'ok', message: `API server reachable (HTTP ${resp.status})` });
-  } catch (err: any) {
-    checks.push({ name: 'api_reachable', status: 'fail', message: `API server unreachable: ${err.message}` });
+    checks.push({
+      name: 'api_reachable',
+      status: resp.ok ? 'ok' : 'fail',
+      message: `API /api/health → HTTP ${resp.status}`,
+      fix: resp.ok ? undefined : 'Check NUMO_API_URL and your network connection',
+    });
+  } catch (err: unknown) {
+    checks.push({
+      name: 'api_reachable',
+      status: 'fail',
+      message: `API server unreachable: ${errMessage(err)}`,
+      fix: 'Check NUMO_API_URL and your network connection',
+    });
+  }
+
+  if (creds) {
+    try {
+      const token = await getIdToken();
+      const resp = await fetch(`${API_BASE}/api/tasks?backlog=true`, {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(5000),
+      });
+      checks.push({
+        name: 'auth',
+        status: resp.ok ? 'ok' : 'fail',
+        message: resp.ok ? `Authenticated request OK (HTTP ${resp.status})` : `Authenticated request failed: HTTP ${resp.status}`,
+        fix: resp.ok ? undefined : 'numo login',
+      });
+    } catch (err: unknown) {
+      checks.push({
+        name: 'auth',
+        status: 'fail',
+        message: `Authenticated request error: ${errMessage(err)}`,
+        fix: 'numo login',
+      });
+    }
   }
 
   return checks;
@@ -70,13 +167,13 @@ export function registerDoctorCommand(program: Command) {
     .description('Check CLI health and connectivity')
     .action(async function (this: Command) {
       const opts = this.optsWithGlobals();
-      const asJson = !!(opts.json || opts.quiet || !isInteractive());
+      const asJson = isQuietMode(opts);
 
       const checks = await runChecks();
       const ok = checks.every((c) => c.status !== 'fail');
 
       if (asJson) {
-        printJson({ ok, checks });
+        printJson({ ok, exitCode: ok ? 0 : 1, checks });
       } else {
         console.log('');
         for (const check of checks) {
@@ -86,13 +183,12 @@ export function registerDoctorCommand(program: Command) {
               ? pc.yellow('!')
               : pc.red(SYM.cross);
           console.log(`  ${icon} ${check.message}`);
+          if (check.fix) {
+            console.log(`      ${pc.dim('Fix:')} ${pc.cyan('$')} ${pc.bold(check.fix)}`);
+          }
         }
         console.log('');
-        if (ok) {
-          console.log(`  ${pc.green('All checks passed.')}`);
-        } else {
-          console.log(`  ${pc.red('Some checks failed.')}`);
-        }
+        console.log(`  ${ok ? pc.green('All checks passed.') : pc.red('Some checks failed.')}`);
         console.log('');
       }
 
