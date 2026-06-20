@@ -1,7 +1,7 @@
 ---
 name: numo-cli
 description: Manage ADHD tasks, routines and community via Numo CLI
-version: 1.0.1 # x-release-please-version
+version: 1.5.0 # x-release-please-version
 license: MIT
 ---
 
@@ -11,55 +11,59 @@ CLI for [Numo](https://www.npmjs.com/package/numo-cli) — the ADHD planner app.
 
 ## Protocol
 
-- **Server:** Set `NUMO_API_URL=https://api.numo.ai` (or your API server). All data and auth goes through this endpoint.
+- **Server:** Set `NUMO_API_URL=https://api.numo.ai` (or your API server). All data and auth goes through this endpoint. A custom (non-`numo.ai`, non-loopback) host requires `NUMO_ALLOW_CUSTOM_HOST=1` — a guard against sending credentials to an untrusted host.
 - **Auth:** `numo login` or set `NUMO_TOKEN=<idToken>` env var. Check: `numo whoami --json`. Credentials at `~/.config/numo/` (or `NUMO_CONFIG_DIR`).
 - **Output:** Non-TTY auto-outputs JSON. Use `--json` to force. Field selection: `--json id,text,completed`.
 - **Dates:** Accepts ISO (`2026-03-27`) and natural language (`tomorrow`, `next monday`, `in 3 days`).
 - **Errors:** Structured JSON to stderr: `{ error: { kind, code, message, suggestion, retryable } }`. Semantic exit codes (77=auth, 100=not found, 2=usage).
-- **Batch:** `numo tasks list --json | jq -r '.tasks[].id' | numo tasks complete --stdin` — NDJSON output, one error won't stop the rest.
+- **Batch:** `numo tasks list --json | jq -r '.tasks[].id' | numo tasks complete --stdin` — NDJSON output; one error won't stop the rest, but any failure makes the process exit non-zero.
+- **Idempotency:** `numo tasks create "..." --client-task-id <stable-id>` — retrying with the same id returns the existing task (`idempotentReplay: true`) instead of creating a duplicate. Use it whenever an agent may retry.
 - **Diagnostics:** `numo doctor --json` checks auth, connectivity, Node version.
-- **Discovery:** `numo commands --json` lists all commands. `numo schema tasks create` returns option schema.
+- **Discovery:** `numo commands --json` lists all commands. `numo schema "tasks create"` returns option `type`/`enum`/`repeatable`/`default` — enough to build a call without guessing.
 
 ## Commands
 
 ```bash
-# Quick capture
-numo add "Buy milk"                                    # Today, public, no wizard
-numo add "Meeting" --due tomorrow --tags Work
-numo add "Secret" --due friday --private
+# Create (positional text or --text; private + inserted at top by default)
+numo tasks create "Buy milk"                           # Today, private
+numo tasks create "Meeting" --due "tomorrow 14:30" --tags Work
+numo tasks create "Standup" --repeat weekly --weekdays Mon,Wed,Fri
+numo tasks create "Pay rent" --repeat monthly --month-days 1
+numo tasks create "Read later" --backlog               # Someday / no due date
+numo tasks create "Trip" --subtask "Book hotel" --subtask "Pack"   # repeatable
+numo tasks create "Deploy" --client-task-id abc-123    # idempotent (safe to retry)
 
 # Tasks
-numo tasks list                                        # Today's tasks
+numo tasks list                                        # Today (includes overdue carry-over)
 numo tasks list --date 2026-03-27 --json id,text       # Field selection
-numo tasks list --yesterday                            # Yesterday's tasks
-numo tasks list --tomorrow                             # Tomorrow's tasks
+numo tasks list --yesterday                            # also --tomorrow
 numo tasks list --backlog --tag Work                   # Filtered
-numo tasks get <id>
-numo tasks create --text "..." --due "next monday" --tags Health --difficulty 2
-numo tasks create --text "..." --private --note "details" --priority 0.5 --duration 30
+numo tasks get <id>                                    # detail incl. subtasks
 numo tasks update <id> --text "..." --due 2026-03-28
-numo tasks update <id> --public --note "updated" --priority 1 --duration 60
+numo tasks update <id> --repeat none                   # stop repeating
+numo tasks update <id> --backlog                       # clear due date
 numo tasks delete <id> --yes                           # Skip confirmation
-numo tasks delete --stdin                              # Batch from pipe
-numo tasks complete <id>
+numo tasks delete --stdin                              # Batch from pipe (NDJSON)
+numo tasks complete <id> --date "2026-03-27 09:00"     # today/yesterday only
 numo tasks complete --stdin                            # Batch from pipe
 numo tasks uncomplete <historyId>
 
+# Community (read-only)
+numo posts list                                        # --cursor/--limit for pages
+numo posts get <id>
+numo posts comments <postId>
+numo posts replies <postId> <commentId>
+
 # Auth & Utils
 numo login [--phone]
-numo register --email user@example.com --password ******
 numo logout
-numo whoami
-numo doctor
-numo profile
-```
+numo whoami --json
+numo doctor --json
+numo profile --json
 
-## Discovery & Completions
-
-```bash
-numo commands --json                     # List all available commands
-numo schema tasks create                 # JSON schema for a command (for AI agents)
-numo completion zsh                      # Shell completions (zsh)
+# Discovery (drive the CLI without guessing)
+numo commands --json                     # list every command
+numo schema "tasks create"               # option types / enums / defaults for one command
 ```
 
 ## Common Mistakes

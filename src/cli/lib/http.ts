@@ -82,7 +82,6 @@ async function doRequest<T = any>(url: string, opts: HttpRequestOptions = {}): P
         (body as any)?.error?.message ?? `HTTP ${resp.status}`
       );
       err.response = { status: resp.status, headers: responseHeaders, data: body };
-      // Preserve code for classifyError compatibility
       err.code = `HTTP_${resp.status}`;
       throw err;
     }
@@ -92,13 +91,11 @@ async function doRequest<T = any>(url: string, opts: HttpRequestOptions = {}): P
     return { data, status: resp.status, headers: responseHeaders };
   } catch (err: any) {
     clearTimeout(timer);
-    // Map AbortError to timeout code
     if (err.name === 'AbortError') {
       const timeoutErr: HttpError = new Error('Request timed out');
       timeoutErr.code = 'ECONNABORTED';
       throw timeoutErr;
     }
-    // Map fetch network errors to Node-style codes
     if (err.cause?.code && !err.response) {
       err.code = err.cause.code;
     }

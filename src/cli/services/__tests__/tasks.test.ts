@@ -17,8 +17,6 @@ const mockPost = vi.mocked(api.post);
 const mockPatch = vi.mocked(api.patch);
 const mockDel = vi.mocked(api.del);
 
-const UID = 'test-user-123';
-
 beforeEach(() => {
   vi.clearAllMocks();
 });
@@ -27,7 +25,7 @@ describe('listTasks', () => {
   it('calls GET /api/tasks with query params', async () => {
     mockGet.mockResolvedValue({ tasks: [], count: 0, pendingCount: 0, completedCount: 0 });
 
-    await listTasks(UID, { date: '2024-01-15', tag: 'work' });
+    await listTasks({ date: '2024-01-15', tag: 'work' });
 
     expect(mockGet).toHaveBeenCalledWith('/api/tasks', {
       date: '2024-01-15',
@@ -39,7 +37,7 @@ describe('listTasks', () => {
   it('passes backlog=true', async () => {
     mockGet.mockResolvedValue({ tasks: [], count: 0, pendingCount: 0, completedCount: 0 });
 
-    await listTasks(UID, { backlog: true });
+    await listTasks({ backlog: true });
 
     expect(mockGet).toHaveBeenCalledWith('/api/tasks', {
       date: undefined,
@@ -53,7 +51,7 @@ describe('getTask', () => {
   it('calls GET /api/tasks/:id', async () => {
     mockGet.mockResolvedValue({ id: 'task-1', text: 'Buy milk' });
 
-    await getTask(UID, 'task-1');
+    await getTask('task-1');
 
     expect(mockGet).toHaveBeenCalledWith('/api/tasks/task-1');
   });
@@ -63,7 +61,7 @@ describe('createTask', () => {
   it('calls POST /api/tasks with body', async () => {
     mockPost.mockResolvedValue({ task: { id: 'task-1' }, karma: 2 });
 
-    await createTask(UID, { text: 'Buy milk' });
+    await createTask({ text: 'Buy milk' });
 
     expect(mockPost).toHaveBeenCalledWith('/api/tasks', { text: 'Buy milk' });
   });
@@ -73,7 +71,7 @@ describe('updateTask', () => {
   it('calls PATCH /api/tasks/:id', async () => {
     mockPatch.mockResolvedValue({ task: { id: 'task-1', text: 'Updated' } });
 
-    await updateTask(UID, 'task-1', { text: 'Updated' });
+    await updateTask('task-1', { text: 'Updated' });
 
     expect(mockPatch).toHaveBeenCalledWith('/api/tasks/task-1', { text: 'Updated' });
   });
@@ -83,7 +81,7 @@ describe('deleteTask', () => {
   it('calls DELETE /api/tasks/:id', async () => {
     mockDel.mockResolvedValue({ deleted: true });
 
-    await deleteTask(UID, 'task-1');
+    await deleteTask('task-1');
 
     expect(mockDel).toHaveBeenCalledWith('/api/tasks/task-1');
   });
@@ -93,7 +91,7 @@ describe('completeTask', () => {
   it('calls POST /api/tasks/:id/complete', async () => {
     mockPost.mockResolvedValue({ completed: true, karma: 5 });
 
-    await completeTask(UID, 'task-1');
+    await completeTask('task-1');
 
     expect(mockPost).toHaveBeenCalledWith('/api/tasks/task-1/complete', undefined);
   });
@@ -101,7 +99,7 @@ describe('completeTask', () => {
   it('passes date when provided', async () => {
     mockPost.mockResolvedValue({ completed: true, karma: 5 });
 
-    await completeTask(UID, 'task-1', '2024-01-15');
+    await completeTask('task-1', '2024-01-15');
 
     expect(mockPost).toHaveBeenCalledWith('/api/tasks/task-1/complete', { date: '2024-01-15' });
   });
@@ -111,7 +109,7 @@ describe('uncompleteTask', () => {
   it('calls POST /api/tasks/:id/uncomplete', async () => {
     mockPost.mockResolvedValue({ uncompleted: true });
 
-    await uncompleteTask(UID, 'history-1');
+    await uncompleteTask('history-1');
 
     expect(mockPost).toHaveBeenCalledWith('/api/tasks/history-1/uncomplete');
   });

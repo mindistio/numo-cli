@@ -1,7 +1,12 @@
 node_modules/
 dist/
+coverage/
 .env
 .DS_Store
 .context/
+.claude/
+.omc/
+.vscode/
+.idea/
 *.tgz
 *.log

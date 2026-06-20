@@ -15,6 +15,9 @@ await esbuild.build({
   define: {
     __CLI_VERSION__: JSON.stringify(pkg.version),
     __API_BASE_URL__: JSON.stringify(process.env.NUMO_API_URL ?? 'https://api.numo.ai'),
+    // Inline the agent contract so `numo guide` ships inside the single-file
+    // binary — AGENTS.md stays the one source of truth (no duplicated copy).
+    __AGENTS_MD__: JSON.stringify(readFileSync('AGENTS.md', 'utf8')),
   },
 });
 

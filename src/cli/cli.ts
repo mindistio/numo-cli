@@ -1,16 +1,9 @@
 import { Command } from 'commander';
 import pc from 'picocolors';
 import { login } from './auth/login';
-import { register } from './auth/register';
 import { clearCredentials, loadCredentials } from './auth/credentials';
+import { getCredentialsPath } from './lib/dirs';
 import { registerTasksCommands } from './commands/tasks';
-import { requireUid } from './lib/uid';
-import { createTask } from './services/tasks';
-import { runCreate } from './lib/actions';
-import { formatKarmaGain } from './lib/format';
-import { SYM } from './lib/symbols';
-import { parseHumanDate } from './lib/parse-date';
-import type { TaskCreateResponse } from './types/api';
 
 import { registerPostsCommands } from './commands/posts';
 import { registerProfileCommands } from './commands/profile';
@@ -18,8 +11,10 @@ import { registerDoctorCommand } from './commands/doctor';
 import { migrateIfNeeded } from './lib/dirs';
 import { checkForUpdate } from './lib/update-check';
 import { outputError, printJson } from './lib/output';
-import { isInteractive } from './lib/tty';
-import { ExitCode } from './lib/errors';
+import { collectCommands, formatCommandMap } from './lib/command-map';
+import { getAgentGuide } from './lib/guide';
+import { isQuietMode } from './lib/quiet';
+import { ExitCode, Errors } from './lib/errors';
 
 declare const __CLI_VERSION__: string;
 const CLI_VERSION = typeof __CLI_VERSION__ !== 'undefined' ? __CLI_VERSION__ : '0.0.0-dev';
@@ -45,29 +40,26 @@ ${pc.bold('Output modes:')}
 
 ${pc.bold('Examples:')}
   ${pc.dim('$')} numo login
-  ${pc.dim('$')} numo tasks list --date 2025-01-15
-  ${pc.dim('$')} numo tasks create --text "Buy groceries" --due 2025-01-16`);
+  ${pc.dim('$')} numo tasks list
+  ${pc.dim('$')} numo tasks create --text "Buy groceries" --due tomorrow
+
+${pc.bold('Environment:')}
+  NUMO_API_URL              API server URL
+  NUMO_TOKEN                Pre-existing ID token (skips local credentials)
+  NUMO_LOGIN_EMAIL          Email for non-interactive login
+  NUMO_LOGIN_PASSWORD       Password for non-interactive login
+  NUMO_NO_UPDATE_CHECK      Disable update notifications`);
 
 program
   .command('login')
   .description('Login with your Numo account')
   .option('--phone', 'Login with phone number (SMS OTP)')
-  .action(async (opts) => { await login(opts); })
+  .action(async function (this: Command) { await login(this.optsWithGlobals(), program); })
   .addHelpText('after', `
 Examples:
-  $ numo login               # Interactive (email/password)
-  $ numo login --phone       # SMS OTP flow`);
-
-program
-  .command('register')
-  .description('Create a new Numo account')
-  .option('--email <email>', 'Email address')
-  .option('--password <password>', 'Password (min 6 chars; visible in ps/history — prefer interactive mode)')
-  .action(async (opts) => { await register(opts); })
-  .addHelpText('after', `
-Examples:
-  $ numo register                                        # Interactive
-  $ numo register --email user@example.com --password s3cret   # Non-interactive`);
+  $ numo login                                        # Interactive (email/password)
+  $ numo login --phone                                # SMS OTP flow
+  $ NUMO_LOGIN_EMAIL=… NUMO_LOGIN_PASSWORD=… numo login --json   # Non-interactive (CI/agents)`);
 
 program
   .command('logout')
@@ -75,80 +67,88 @@ program
   .action(() => {
     clearCredentials();
     console.log(pc.green('Logged out.'));
-  });
+    if (process.env.NUMO_TOKEN) {
+      console.log(pc.yellow('\n  Note: NUMO_TOKEN env var is still set. Unset it to fully de-authenticate.'));
+    }
+  })
+  .addHelpText('after', `
+Examples:
+  $ numo logout
+
+If NUMO_TOKEN env var is set, it is not cleared by logout. Unset it separately:
+  $ unset NUMO_TOKEN`);
 
 program
   .command('whoami')
   .description('Show current auth status (no API call)')
+  .addHelpText('after', `
+Examples:
+  $ numo whoami
+  $ numo whoami --json   # → {"email":"...","uid":"...","tokenValid":true,"expiresIn":N,"source":"..."}`)
   .action(function(this: Command) {
     const opts = this.optsWithGlobals();
-    const asJson = !!(opts.json || opts.quiet || !isInteractive());
+    const asJson = isQuietMode(opts);
 
+    const envToken = process.env.NUMO_TOKEN;
     const creds = loadCredentials();
 
-    if (!creds) {
-      if (asJson) {
-        console.error(JSON.stringify({ error: { message: 'Not logged in', code: 'AUTH_REQUIRED' } }));
-      } else {
-        console.error(`${pc.red('Not logged in')}\n\n  $ numo login\n`);
+    // NUMO_TOKEN env path: no credentials file needed. Decode the JWT `exp`
+    // claim so we can report real validity instead of "AUTH_REQUIRED".
+    // NUMO_TOKEN tokens do NOT auto-refresh — long-running scripts must use
+    // NUMO_LOGIN_EMAIL / NUMO_LOGIN_PASSWORD instead.
+    if (!creds && envToken) {
+      let tokenValid = false;
+      let expiresIn = 0;
+      let email: string | null = null;
+      let uid: string | null = null;
+      try {
+        const payloadB64 = envToken.split('.')[1] ?? '';
+        const payload = JSON.parse(Buffer.from(payloadB64, 'base64').toString('utf8'));
+        if (typeof payload.exp === 'number') {
+          const expMs = payload.exp * 1000;
+          tokenValid = Date.now() < expMs;
+          expiresIn = Math.max(0, Math.floor((expMs - Date.now()) / 1000));
+        }
+        if (typeof payload.email === 'string') email = payload.email;
+        if (typeof payload.user_id === 'string') uid = payload.user_id;
+        else if (typeof payload.sub === 'string') uid = payload.sub;
+      } catch {
+        // Malformed token — leave tokenValid=false.
       }
-      process.exit(ExitCode.NO_PERM);
+      if (asJson) {
+        printJson({ email, uid, tokenValid, expiresIn, source: 'NUMO_TOKEN', autoRefresh: false });
+      } else {
+        if (email) console.log(`  ${pc.bold('Email')}  ${email}`);
+        if (uid) console.log(`  ${pc.bold('UID')}    ${uid}`);
+        console.log(`  ${pc.bold('Token')}  ${tokenValid ? pc.green(`valid (expires in ${Math.floor(expiresIn / 60)}m)`) : pc.red('expired or malformed')}`);
+        console.log(`  ${pc.bold('Auth')}   NUMO_TOKEN env var ${pc.dim('(no auto-refresh; use NUMO_LOGIN_EMAIL/PASSWORD for long sessions)')}`);
+      }
+      // An expired/malformed NUMO_TOKEN is not usable and does not auto-refresh —
+      // exit NO_PERM so agents gating on the exit code don't treat it as authenticated.
+      if (!tokenValid) process.exitCode = ExitCode.NO_PERM;
+      return;
+    }
+
+    if (!creds) {
+      outputError(Errors.authRequired(), asJson);
       return;
     }
 
     const tokenValid = !!(creds.idToken && creds.idTokenExpiry && Date.now() < creds.idTokenExpiry);
     const expiresIn = creds.idTokenExpiry ? Math.max(0, Math.floor((creds.idTokenExpiry - Date.now()) / 1000)) : 0;
-    const source = process.env.NUMO_TOKEN ? 'NUMO_TOKEN' : 'credentials_file';
+    const source = 'credentials_file';
 
     if (asJson) {
-      printJson({ email: creds.email, uid: creds.uid, tokenValid, expiresIn, source });
+      printJson({ email: creds.email, uid: creds.uid, tokenValid, expiresIn, source, autoRefresh: true });
     } else {
       console.log(`  ${pc.bold('Email')}  ${creds.email}`);
       console.log(`  ${pc.bold('UID')}    ${creds.uid}`);
       console.log(`  ${pc.bold('Token')}  ${tokenValid ? pc.green(`valid (expires in ${Math.floor(expiresIn / 60)}m)`) : pc.yellow('expired (will auto-refresh)')}`);
-      console.log(`  ${pc.bold('Auth')}   ${source === 'NUMO_TOKEN' ? 'NUMO_TOKEN env var' : '~/.numo/credentials.json'}`);
+      console.log(`  ${pc.bold('Auth')}   ${getCredentialsPath()}`);
     }
   });
 
 registerTasksCommands(program);
-
-program
-  .command('add [text...]')
-  .description('Quick-add a task (today, public, no wizard)')
-  .option('--due <date>', 'Due date YYYY-MM-DD (default: today)')
-  .option('--tags <tags>', 'Comma-separated tags')
-  .option('--public', 'Make task public (default)')
-  .option('--private', 'Make task private')
-  .action(async function (this: Command, textParts?: string[]) {
-    const opts = this.optsWithGlobals();
-    const uid = requireUid();
-    const text = textParts?.join(' ');
-    if (!text) {
-      console.error('Usage: numo add "task text"');
-      process.exit(ExitCode.USAGE);
-    }
-    const body: Record<string, unknown> = {
-      text,
-      dueDate: opts.due ? (parseHumanDate(opts.due) ?? opts.due) : new Date().toISOString().slice(0, 10),
-    };
-    if (opts.tags) body.tags = opts.tags.split(',');
-    if (opts.public) body.isPublic = true;
-    if (opts.private) body.isPublic = false;
-
-    await runCreate({
-      global: opts,
-      fn: () => createTask(uid, body),
-      dataKey: 'task',
-      spinnerMessage: 'Creating task...',
-      onInteractive: (_task, payload: TaskCreateResponse) => {
-        const { task, karma } = payload;
-        const check = pc.green(SYM.check);
-        console.log(`\n  ${check} Created  ${task.text}  ${pc.dim(task.id)}`);
-        if (karma) console.log(`    ${formatKarmaGain(karma)}`);
-        console.log('');
-      },
-    });
-  });
 
 registerPostsCommands(program);
 registerProfileCommands(program);
@@ -159,42 +159,44 @@ program
   .description('List all available commands')
   .action(function (this: Command) {
     const opts = this.optsWithGlobals();
-    const useJson = !!(opts.json || opts.quiet || !isInteractive());
+    const useJson = isQuietMode(opts);
 
-    const commands: { name: string; description: string; options: string[] }[] = [];
-    function walk(cmd: Command, prefix: string) {
-      for (const sub of cmd.commands) {
-        const fullName = prefix ? `${prefix} ${sub.name()}` : sub.name();
-        if (sub.commands.length > 0) {
-          walk(sub, fullName);
-        } else {
-          commands.push({
-            name: fullName,
-            description: sub.description(),
-            options: sub.options.map((o: any) => o.flags),
-          });
-        }
-      }
-    }
-    walk(program, '');
+    const commands = collectCommands(program);
 
     if (useJson) {
-      console.log(JSON.stringify({ commands }));
+      console.log(JSON.stringify({ schemaVersion: '1', cliVersion: CLI_VERSION, commands }));
     } else {
-      console.log('');
-      let lastGroup = '';
-      for (const cmd of commands) {
-        const group = cmd.name.split(' ')[0];
-        if (group !== lastGroup) {
-          if (lastGroup) console.log('');
-          console.log(`  ${pc.bold(group.charAt(0).toUpperCase() + group.slice(1) + ':')}`);
-          lastGroup = group;
-        }
-        console.log(`    numo ${cmd.name.padEnd(30)} ${pc.dim(cmd.description)}`);
-      }
+      console.log(`\n${formatCommandMap(commands)}`);
       console.log(`\n  ${pc.dim('Run numo <command> --help for details.')}\n`);
     }
   });
+
+program
+  .command('guide')
+  .alias('agents')
+  .description('Print the full agent integration guide (AGENTS.md)')
+  .addHelpText('after', `
+Examples:
+  $ numo guide              # full agent guide (Markdown)
+  $ numo agents             # alias
+  $ numo guide --json       # → {"schemaVersion":"1","cliVersion":"...","guide":"..."}`)
+  .action(function (this: Command) {
+    const opts = this.optsWithGlobals();
+    const useJson = isQuietMode(opts);
+    const guide = getAgentGuide();
+
+    if (useJson) {
+      console.log(JSON.stringify({ schemaVersion: '1', cliVersion: CLI_VERSION, guide }));
+    } else {
+      console.log(guide);
+    }
+  });
+
+// Allowed values for options that accept a closed set — surfaced so agents don't guess.
+const OPTION_ENUMS: Record<string, ReadonlyArray<string | number>> = {
+  '--repeat': ['daily', 'weekly', 'monthly', 'none'],
+  '--difficulty': [0, 1, 2, 3],
+};
 
 function buildCommandSchema(cmd: Command, fullName: string): Record<string, unknown> {
   return {
@@ -203,16 +205,25 @@ function buildCommandSchema(cmd: Command, fullName: string): Record<string, unkn
     arguments: (cmd as any).registeredArguments?.map((a: any) => ({
       name: a.name(),
       required: a.required,
+      variadic: a.variadic,
       description: a.description,
     })) ?? [],
     options: cmd.options
       .filter((o: any) => !['--json', '-q, --quiet'].includes(o.flags))
-      .map((o: any) => ({
-        flags: o.flags,
-        description: o.description,
-        required: o.required,
-        default: o.defaultValue,
-      })),
+      .map((o: any) => {
+        const takesValue = o.required || o.optional;
+        const repeatable = Array.isArray(o.defaultValue);
+        const opt: Record<string, unknown> = {
+          flags: o.flags,
+          description: o.description,
+          type: takesValue ? (repeatable ? 'string[]' : 'string') : 'boolean',
+          required: o.required,
+          default: o.defaultValue,
+        };
+        if (repeatable) opt.repeatable = true;
+        if (OPTION_ENUMS[o.long]) opt.enum = OPTION_ENUMS[o.long];
+        return opt;
+      }),
   };
 }
 
@@ -230,7 +241,7 @@ program
         }
       }
       walk(program, '');
-      console.log(JSON.stringify({ commands: schemas }, null, 2));
+      console.log(JSON.stringify({ schemaVersion: '1', cliVersion: CLI_VERSION, commands: schemas }, null, 2));
       return;
     }
 
@@ -245,7 +256,7 @@ program
       }
       cmd = sub;
     }
-    console.log(JSON.stringify(buildCommandSchema(cmd, cmdPath), null, 2));
+    console.log(JSON.stringify({ schemaVersion: '1', cliVersion: CLI_VERSION, ...buildCommandSchema(cmd, cmdPath) }, null, 2));
   });
 
 program
@@ -259,8 +270,7 @@ program
 
     const lines: string[] = ['#compdef numo', '', '_numo() {', '  local -a commands', ''];
 
-    // Collect top-level commands
-    const topLevel: { name: string; desc: string; subs: { name: string; desc: string; opts: string[] }[] }[] = [];
+    const topLevel: { name: string; desc: string; subs: { name: string; desc: string; opts: string[] }[]; opts: string[] }[] = [];
     for (const cmd of program.commands) {
       const subs: { name: string; desc: string; opts: string[] }[] = [];
       if (cmd.commands.length > 0) {
@@ -277,17 +287,15 @@ program
         desc: cmd.description().replace(/'/g, ''),
         subs,
         opts: cmd.options.map((o: any) => o.long || o.short).filter(Boolean),
-      } as any);
+      });
     }
 
-    // Top-level commands list
     lines.push('  commands=(');
     for (const cmd of topLevel) {
       lines.push(`    '${cmd.name}:${cmd.desc}'`);
     }
     lines.push('  )', '');
 
-    // Main _arguments
     lines.push('  _arguments -C \\');
     lines.push("    '--json[Output as JSON]' \\");
     lines.push("    '-q[Suppress interactive output]' \\");

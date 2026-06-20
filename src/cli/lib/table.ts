@@ -1,7 +1,6 @@
 import pc from 'picocolors';
 import { isUnicodeSupported } from './tty';
 
-// Box-drawing characters (Unicode with ASCII fallback)
 const BOX = isUnicodeSupported
   ? {
       topLeft: String.fromCodePoint(0x250c),     // ┌
@@ -30,10 +29,6 @@ const BOX = isUnicodeSupported
       cross: '+',
     };
 
-/**
- * Render a bordered table string from headers and rows.
- * Returns the empty message if rows is empty.
- */
 export function renderTable(
   headers: string[],
   rows: string[][],
