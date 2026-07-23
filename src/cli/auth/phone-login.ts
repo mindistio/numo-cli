@@ -28,7 +28,9 @@ export async function authenticateWithPhone(spinner: { start: (msg?: string) => 
     phoneNumber: phone,
   });
 
-  const { sessionId, verifyUrl } = startResp.data;
+  // pollSecret is a capability token returned ONLY to the CLI (never the browser).
+  // The poll endpoint requires it alongside the session id, so we must carry it.
+  const { sessionId, pollSecret, verifyUrl } = startResp.data;
   spinner.stop('');
 
   p.log.info('Opening browser for phone verification...');
@@ -45,7 +47,7 @@ export async function authenticateWithPhone(spinner: { start: (msg?: string) => 
     await new Promise((r) => setTimeout(r, POLL_INTERVAL));
 
     try {
-      const pollResp = await http.get(`${API_BASE}/api/auth/phone/poll?session=${sessionId}`);
+      const pollResp = await http.get(`${API_BASE}/api/auth/phone/poll?session=${encodeURIComponent(sessionId)}&secret=${encodeURIComponent(pollSecret)}`);
 
       if (pollResp.status === 200 && pollResp.data.idToken) {
         return {
