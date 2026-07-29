@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.1](https://github.com/mindistio/numo-cli/compare/v1.6.0...v1.6.1) (2026-07-29)
+
+
+### Bug Fixes
+
+* **auth:** complete phone (SMS) login flow ([#13](https://github.com/mindistio/numo-cli/issues/13)) ([500a6a3](https://github.com/mindistio/numo-cli/commit/500a6a3e6904f7cd9e77066ef2472569db343431))
+
 ## [1.6.0](https://github.com/mindistio/numo-cli/compare/v1.5.0...v1.6.0) (2026-06-20)
 
 
