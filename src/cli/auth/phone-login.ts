@@ -28,11 +28,12 @@ export async function authenticateWithPhone(spinner: { start: (msg?: string) => 
     phoneNumber: phone,
   });
 
-  const { sessionId, verifyUrl } = startResp.data;
+  const { sessionId, pollSecret, userCode, verifyUrl } = startResp.data;
   spinner.stop('');
 
   p.log.info('Opening browser for phone verification...');
   p.log.info(pc.dim(`If the browser does not open, visit: ${verifyUrl}`));
+  p.log.info(`Enter this confirmation code on the page: ${pc.bold(pc.cyan(userCode))}`);
 
   const { default: open } = await import('open');
   const cp = await open(verifyUrl);
@@ -45,7 +46,7 @@ export async function authenticateWithPhone(spinner: { start: (msg?: string) => 
     await new Promise((r) => setTimeout(r, POLL_INTERVAL));
 
     try {
-      const pollResp = await http.get(`${API_BASE}/api/auth/phone/poll?session=${sessionId}`);
+      const pollResp = await http.get(`${API_BASE}/api/auth/phone/poll?session=${encodeURIComponent(sessionId)}&secret=${encodeURIComponent(pollSecret)}`);
 
       if (pollResp.status === 200 && pollResp.data.idToken) {
         return {
