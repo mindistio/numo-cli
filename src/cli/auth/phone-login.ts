@@ -28,11 +28,6 @@ export async function authenticateWithPhone(spinner: { start: (msg?: string) => 
     phoneNumber: phone,
   });
 
-  // pollSecret is a capability token returned ONLY to the CLI (never the browser).
-  // The poll endpoint requires it alongside the session id, so we must carry it.
-  // userCode is the device-grant confirmation code: the verify page refuses to
-  // complete without it, and it is shown ONLY here — the user copies it onto the
-  // page by hand, which binds the verification to this terminal.
   const { sessionId, pollSecret, userCode, verifyUrl } = startResp.data;
   spinner.stop('');
 
