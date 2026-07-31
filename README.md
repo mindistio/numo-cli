@@ -1,10 +1,10 @@
 <p align="center">
-  <img src="assets/berry.png" alt="Berry, the Numo mascot" width="160" />
+  <img src="assets/berry.png" alt="Numo" width="160" />
 </p>
 
 <h1 align="center">numo-cli</h1>
 
-<p align="center"><strong>The ADHD-friendly CLI for Numo — for humans and AI agents.</strong><br />Meet <strong>Berry</strong>, the official Numo mascot. 🍓</p>
+<p align="center"><strong>The ADHD-friendly CLI for Numo — for humans and AI agents.</strong></p>
 
 <p align="center">
   <a href="https://www.npmjs.com/package/numo-cli"><img src="https://img.shields.io/npm/v/numo-cli" alt="npm" /></a>
