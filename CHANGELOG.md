@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.0](https://github.com/mindistio/numo-cli/compare/v1.6.1...v1.7.0) (2026-07-31)
+
+
+### Features
+
+* slim CLI to a pure HTTP client ([#15](https://github.com/mindistio/numo-cli/issues/15)) ([8b08ad5](https://github.com/mindistio/numo-cli/commit/8b08ad54200fb62671bcaf37f97621f6ce4cd257))
+
 ## [1.6.1](https://github.com/mindistio/numo-cli/compare/v1.6.0...v1.6.1) (2026-07-29)
 
 
