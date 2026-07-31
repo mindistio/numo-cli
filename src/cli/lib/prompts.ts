@@ -10,6 +10,8 @@ export async function promptText(opts: {
   message: string;
   placeholder?: string;
   required?: boolean;
+  /** Return an error message to re-prompt inline (clack keeps the prompt open), or undefined to accept. */
+  validate?: (value: string) => string | undefined;
 }): Promise<string> {
   if (!isInteractive()) {
     throw new CliError(
@@ -24,7 +26,13 @@ export async function promptText(opts: {
   const value = await p.text({
     message: opts.message,
     placeholder: opts.placeholder,
-    validate: opts.required ? (v) => ((v ?? '').trim() ? undefined : 'Required') : undefined,
+    validate: (opts.required || opts.validate)
+      ? (v) => {
+          const s = ((v as string) ?? '').trim();
+          if (opts.required && !s) return 'Required';
+          return opts.validate ? opts.validate((v as string) ?? '') : undefined;
+        }
+      : undefined,
   });
 
   if (p.isCancel(value)) {

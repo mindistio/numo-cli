@@ -69,13 +69,6 @@ export function migrateIfNeeded(): void {
     const data = fs.readFileSync(legacyCreds, 'utf8');
     fs.writeFileSync(path.join(xdgDir, 'credentials.json'), data, { mode: 0o600 });
 
-    // Copy streaks if exists (with secure permissions)
-    const legacyStreaks = path.join(LEGACY_DIR, 'streaks.json');
-    if (fs.existsSync(legacyStreaks)) {
-      const streaksData = fs.readFileSync(legacyStreaks, 'utf8');
-      fs.writeFileSync(path.join(xdgDir, 'streaks.json'), streaksData, { mode: 0o600 });
-    }
-
     process.stderr.write(`Migrated config from ${LEGACY_DIR} to ${xdgDir}\n`);
   } catch {
     // Migration is best-effort
