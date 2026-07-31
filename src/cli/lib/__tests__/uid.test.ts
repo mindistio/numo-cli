@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { requireUid } from '../uid';
+import { requireAuth } from '../uid';
 
 vi.mock('../../auth/credentials', () => ({
   loadCredentials: vi.fn(),
 }));
 
-describe('requireUid', () => {
+describe('requireAuth', () => {
   let loadCredentials: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
@@ -15,26 +15,20 @@ describe('requireUid', () => {
     loadCredentials = vi.mocked(mod.loadCredentials);
   });
 
-  it('returns uid when logged in', () => {
+  it('does not throw when logged in (credentials present)', () => {
     loadCredentials.mockReturnValue({ uid: 'some-uid', email: 'a@b.com' });
-    expect(requireUid()).toBe('some-uid');
+    expect(() => requireAuth()).not.toThrow();
   });
 
   it('throws when not logged in (no token, no creds)', () => {
     loadCredentials.mockReturnValue(null);
-    expect(() => requireUid()).toThrow('Not logged in');
+    expect(() => requireAuth()).toThrow('Not logged in');
   });
 
-  it('honors NUMO_TOKEN without a credentials file (agents/CI)', () => {
+  it('does not throw when NUMO_TOKEN is set, even without a credentials file (agents/CI)', () => {
     loadCredentials.mockReturnValue(null);
-    const payload = Buffer.from(JSON.stringify({ user_id: 'agent-123' })).toString('base64');
-    process.env.NUMO_TOKEN = `eyJhbGciOiJ.${payload}.sig`;
-    expect(requireUid()).toBe('agent-123');
-  });
-
-  it('does not throw for a malformed NUMO_TOKEN (lets the API reject it)', () => {
-    loadCredentials.mockReturnValue(null);
-    process.env.NUMO_TOKEN = 'not-a-jwt';
-    expect(requireUid()).toBe('');
+    // Identity comes from the token; the API validates it — the CLI does not decode it.
+    process.env.NUMO_TOKEN = 'any-token';
+    expect(() => requireAuth()).not.toThrow();
   });
 });

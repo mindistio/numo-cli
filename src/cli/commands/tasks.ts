@@ -2,7 +2,8 @@ import { Command } from 'commander';
 import pc from 'picocolors';
 import { runGet, runList, runCreate, runWrite } from '../lib/actions';
 import { printRecord, printNdjsonLine } from '../lib/output';
-import { requireUid } from '../lib/uid';
+import { randomUUID } from 'node:crypto';
+import { requireAuth } from '../lib/uid';
 import { listTasks, getTask, createTask, updateTask, deleteTask, completeTask, uncompleteTask } from '../services/tasks';
 import { formatDate, formatTags, formatDifficulty, formatDuration, formatRepeat, truncate, formatWeekdayHeader, formatKarmaGain, formatProgressSummary, formatTagsSummary } from '../lib/format';
 import { promptForMissing, promptText, promptConfirm, promptSelect, promptMultiSelect } from '../lib/prompts';
@@ -11,7 +12,7 @@ import { SYM } from '../lib/symbols';
 import { Errors, ExitCode } from '../lib/errors';
 import { parseHumanDate, parseHumanDateOnly } from '../lib/parse-date';
 import { localDateOnly, localDateOffset, normalizeDueDateInBody, isCompletableDate } from '../lib/task-dates';
-import { buildRepeatConfig } from '../lib/task-repeat';
+import { buildRepeatConfig, parseMonthDays } from '../lib/task-repeat';
 import { buildSubtasks } from '../lib/task-subtasks';
 import { readStdinLines } from '../lib/stdin';
 import type { ApiTask, TaskListResponse, TaskCreateResponse, TaskUpdateResponse, TaskDeleteResponse, TaskCompleteResponse, TaskUncompleteResponse } from '../types/api';
@@ -169,7 +170,7 @@ export function registerTasksCommands(program: Command) {
     .option('--tomorrow', 'Show tomorrow\'s tasks')
     .action(async function (this: Command) {
       const opts = this.optsWithGlobals();
-      requireUid();
+      requireAuth();
       const date = resolveDate(opts);
 
       await runList({
@@ -244,7 +245,7 @@ Examples:
     .command('get [id]')
     .description('Get a task by ID')
     .action(async function (this: Command, id?: string) {
-      requireUid();
+      requireAuth();
       const taskId = await promptForMissing({ value: id, message: 'Task ID' });
       await runGet({
         global: this.optsWithGlobals(),
@@ -278,7 +279,7 @@ Examples:
     .option('--client-task-id <id>', 'Idempotency key — retrying with the same id returns the existing task instead of duplicating')
     .action(async function (this: Command, textParts?: string[]) {
       const opts = this.optsWithGlobals();
-      requireUid();
+      requireAuth();
 
       const providedText = (textParts && textParts.length ? textParts.join(' ') : undefined) ?? opts.text;
       // Any text or creation flag → quick path (no wizard, even in a TTY).
@@ -334,8 +335,18 @@ Examples:
               required: true,
             });
           } else if (schedule === 'monthly') {
-            const daysInput = await promptText({ message: 'Days of month', placeholder: '1,15', required: true });
-            repeat.monthDays = daysInput.split(',').map((s: string) => parseInt(s.trim()));
+            // Validate inline so a typo re-prompts (clack keeps the prompt open) instead of
+            // throwing out of the whole wizard and losing the earlier answers.
+            const daysInput = await promptText({
+              message: 'Days of month',
+              placeholder: '1,15',
+              required: true,
+              validate: (v) => {
+                try { parseMonthDays(v); return undefined; }
+                catch (e) { return e instanceof Error ? e.message : 'Use days 1-31, e.g. 1,15'; }
+              },
+            });
+            repeat.monthDays = parseMonthDays(daysInput);
           }
           body.repeat = repeat;
           body.dueDate = fmt(today);
@@ -419,10 +430,12 @@ Examples:
         body.isPublic = opts.public ? true : false;
       }
 
-      if (opts.clientTaskId) body.clientTaskId = opts.clientTaskId;
+      // Always send an idempotency key so a retried create (network timeout / 5xx) returns
+      // the existing task instead of duplicating it.
+      body.clientTaskId = opts.clientTaskId ?? randomUUID();
       // Always insert new tasks at the top of the list.
       body.listPosition = 'top';
-      // Send dueDate in the canonical 'YYYY-MM-DD HH:mm' form + explicit withTime.
+      // Canonicalize dueDate to the 'YYYY-MM-DD HH:mm' wire format.
       normalizeDueDateInBody(body);
 
       await runCreate({
@@ -471,7 +484,7 @@ Examples:
     .option('--subtask <text>', 'Replace subtasks (repeatable: --subtask "a" --subtask "b")', collectValue, [])
     .action(async function (this: Command, id?: string) {
       const opts = this.optsWithGlobals();
-      requireUid();
+      requireAuth();
       const taskId = await promptForMissing({ value: id, message: 'Task ID' });
 
       // --no-time is wired through commander negation: opts.time === false when user passed --no-time
@@ -531,7 +544,7 @@ Examples:
         }
       }
 
-      // Canonicalize dueDate to 'YYYY-MM-DD HH:mm' + withTime (only when dueDate is changing).
+      // Canonicalize dueDate to the wire format (only when dueDate is changing).
       normalizeDueDateInBody(body);
 
       await runWrite({
@@ -564,7 +577,7 @@ Examples:
     .option('--stdin', 'Read task IDs from stdin (one per line)')
     .action(async function (this: Command, id?: string) {
       const opts = this.optsWithGlobals();
-      requireUid();
+      requireAuth();
 
       if (opts.stdin) {
         const ids = readStdinLines();
@@ -626,7 +639,7 @@ Examples:
     .option('--stdin', 'Read task IDs from stdin (one per line)')
     .action(async function (this: Command, id?: string) {
       const opts = this.optsWithGlobals();
-      requireUid();
+      requireAuth();
 
       // Match the API guard: completion is allowed only for today or yesterday.
       // Validated client-side (fail fast, applies to the whole --stdin batch too).
@@ -679,7 +692,7 @@ Examples:
     .option('--stdin', 'Read task IDs from stdin (one per line)')
     .action(async function (this: Command, id?: string) {
       const opts = this.optsWithGlobals();
-      requireUid();
+      requireAuth();
 
       if (opts.stdin) {
         const ids = readStdinLines();

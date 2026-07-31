@@ -3,7 +3,6 @@ import {
   localDateOnly,
   localDateOffset,
   toApiDueDate,
-  dueDateHasTime,
   normalizeDueDateInBody,
   isCompletableDate,
 } from '../task-dates';
@@ -48,36 +47,22 @@ describe('toApiDueDate', () => {
   });
 });
 
-describe('dueDateHasTime', () => {
-  it('is false for null/undefined/date-only/midnight', () => {
-    expect(dueDateHasTime(null)).toBe(false);
-    expect(dueDateHasTime(undefined)).toBe(false);
-    expect(dueDateHasTime('2026-06-19')).toBe(false);
-    expect(dueDateHasTime('2026-06-19 00:00')).toBe(false);
-  });
-
-  it('is true for a non-zero time', () => {
-    expect(dueDateHasTime('2026-06-19 09:30')).toBe(true);
-    expect(dueDateHasTime('2026-06-19 00:01')).toBe(true);
-  });
-});
-
 describe('normalizeDueDateInBody', () => {
-  it('canonicalizes a bare date and sets withTime=false', () => {
+  it('canonicalizes a bare date (no withTime sent — the API derives it)', () => {
     const body: Record<string, unknown> = { text: 'x', dueDate: '2026-06-19' };
     normalizeDueDateInBody(body);
     expect(body.dueDate).toBe('2026-06-19 00:00');
-    expect(body.withTime).toBe(false);
+    expect('withTime' in body).toBe(false);
   });
 
-  it('keeps a timed date and sets withTime=true', () => {
-    const body: Record<string, unknown> = { text: 'x', dueDate: '2026-06-19 14:30' };
+  it('slices a timed date with seconds to minutes (guards the API date regex; no withTime)', () => {
+    const body: Record<string, unknown> = { text: 'x', dueDate: '2026-06-19 14:30:45' };
     normalizeDueDateInBody(body);
     expect(body.dueDate).toBe('2026-06-19 14:30');
-    expect(body.withTime).toBe(true);
+    expect('withTime' in body).toBe(false);
   });
 
-  it('leaves a body without dueDate untouched (no withTime added)', () => {
+  it('leaves a body without dueDate untouched', () => {
     const body: Record<string, unknown> = { text: 'x' };
     normalizeDueDateInBody(body);
     expect('dueDate' in body).toBe(false);

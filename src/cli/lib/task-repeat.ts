@@ -24,6 +24,17 @@ export function normalizeWeekday(s: string): WeekDay {
   return day;
 }
 
+/** Parse a comma list of month days ("1, 15 ,28") to number[], validating each is 1..31. */
+export function parseMonthDays(input: string): number[] {
+  return input.split(',').map((s) => {
+    const n = parseInt(s.trim(), 10);
+    if (!Number.isFinite(n) || n < 1 || n > 31) {
+      throw Errors.invalidInput(`Month days must be 1-31 (got "${s.trim()}")`);
+    }
+    return n;
+  });
+}
+
 export interface RepeatOpts {
   repeat?: string;
   every?: string;
@@ -50,13 +61,7 @@ export function buildRepeatConfig(opts: RepeatOpts): RepeatConfig | undefined {
     repeat.weekDays = opts.weekdays.split(',').map((d) => normalizeWeekday(d));
   }
   if (type === 'monthly' && opts.monthDays) {
-    repeat.monthDays = opts.monthDays.split(',').map((s) => {
-      const n = parseInt(s.trim(), 10);
-      if (!Number.isFinite(n) || n < 1 || n > 31) {
-        throw Errors.invalidInput(`--month-days must be 1-31 (got "${s.trim()}")`);
-      }
-      return n;
-    });
+    repeat.monthDays = parseMonthDays(opts.monthDays);
   }
 
   return repeat;
