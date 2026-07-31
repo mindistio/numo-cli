@@ -14,7 +14,7 @@
 
 <p align="center"><strong>Docs:</strong> <a href="https://numo.ai/cli">numo.ai/cli</a> · <strong>Agent/JSON contract:</strong> <a href="AGENTS.md">AGENTS.md</a></p>
 
-`numo-cli` is the official command-line client for the **Numo ADHD planner** — create, complete, and manage tasks from your terminal or an AI agent. It talks to the hosted Numo API; you sign in with your Numo account.
+`numo-cli` is the command-line client for the **Numo ADHD planner** — create, complete, and manage tasks from your terminal or an AI agent.
 
 ```bash
 # Install — pick one:
@@ -22,7 +22,10 @@ curl -fsSL https://raw.githubusercontent.com/mindistio/numo-cli/main/install.sh 
 npm install -g numo-cli                                                                   # or: npx numo-cli <command>
 
 numo login
-numo tasks create "Buy milk"
+numo tasks create --text "Plan my week" --repeat weekly \
+    --weekdays Mon --due "Mon 09:00" --tags Work --duration 15 \
+    --subtask "Review last week" --subtask "Set top 3 goals" \
+    --subtask "Block focus time"
 numo tasks list
 ```
 
