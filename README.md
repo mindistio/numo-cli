@@ -1,6 +1,10 @@
+<img src="assets/berry.png" alt="Berry, the Numo mascot" width="120" align="right" />
+
 # numo-cli
 
 **The ADHD-friendly CLI for Numo — for humans and AI agents.**
+
+> Say hi to **Berry**, the official Numo mascot. 🍓
 
 [![npm](https://img.shields.io/npm/v/numo-cli)](https://www.npmjs.com/package/numo-cli)
 [![npm downloads](https://img.shields.io/npm/dm/numo-cli)](https://www.npmjs.com/package/numo-cli)
