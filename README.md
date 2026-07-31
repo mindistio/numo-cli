@@ -1,16 +1,18 @@
-<img src="assets/berry.png" alt="Berry, the Numo mascot" width="120" align="right" />
+<p align="center">
+  <img src="assets/berry.png" alt="Berry, the Numo mascot" width="160" />
+</p>
 
-# numo-cli
+<h1 align="center">numo-cli</h1>
 
-**The ADHD-friendly CLI for Numo — for humans and AI agents.**
+<p align="center"><strong>The ADHD-friendly CLI for Numo — for humans and AI agents.</strong><br />Meet <strong>Berry</strong>, the official Numo mascot. 🍓</p>
 
-> Say hi to **Berry**, the official Numo mascot. 🍓
+<p align="center">
+  <a href="https://www.npmjs.com/package/numo-cli"><img src="https://img.shields.io/npm/v/numo-cli" alt="npm" /></a>
+  <a href="https://www.npmjs.com/package/numo-cli"><img src="https://img.shields.io/npm/dm/numo-cli" alt="npm downloads" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT" /></a>
+</p>
 
-[![npm](https://img.shields.io/npm/v/numo-cli)](https://www.npmjs.com/package/numo-cli)
-[![npm downloads](https://img.shields.io/npm/dm/numo-cli)](https://www.npmjs.com/package/numo-cli)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-
-**Docs:** [numo.ai/cli](https://numo.ai/cli) · **Agent/JSON contract:** [AGENTS.md](AGENTS.md)
+<p align="center"><strong>Docs:</strong> <a href="https://numo.ai/cli">numo.ai/cli</a> · <strong>Agent/JSON contract:</strong> <a href="AGENTS.md">AGENTS.md</a></p>
 
 `numo-cli` is the official command-line client for the **Numo ADHD planner** — create, complete, and manage tasks from your terminal or an AI agent. It talks to the hosted Numo API; you sign in with your Numo account.
 
