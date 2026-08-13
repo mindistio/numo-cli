@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { classifyError, sanitizeErrorMessage, CliError, ErrorKind, ExitCode } from '../errors';
+import { classifyError, commanderToCliError, sanitizeErrorMessage, CliError, ErrorKind, ExitCode } from '../errors';
 
 function httpError(status: number, body?: unknown, headers: Record<string, string> = {}) {
   return { code: `HTTP_${status}`, message: `HTTP ${status}`, response: { status, headers, data: body } };
@@ -73,8 +73,69 @@ describe('classifyError — structured body over status', () => {
   });
 });
 
+describe('commanderToCliError', () => {
+  const commanderError = (code: string, message: string) => Object.assign(new Error(message), { code, exitCode: 1 });
+
+  // Contract: a parse failure is an error like any other — same kind vocabulary, same
+  // exit code an agent branches on. Commander otherwise exits 1 with bare text.
+  it.each([
+    ['commander.unknownCommand', ErrorKind.INVALID_INPUT],
+    ['commander.unknownOption', ErrorKind.INVALID_INPUT],
+    ['commander.missingArgument', ErrorKind.MISSING_ARGUMENT],
+    ['commander.optionMissingArgument', ErrorKind.MISSING_ARGUMENT],
+  ])('%s → %s / exit 2', (code, kind) => {
+    const e = commanderToCliError(commanderError(code, "error: unknown option '--x'"));
+    expect(e.kind).toBe(kind);
+    expect(e.exitCode).toBe(ExitCode.USAGE);
+  });
+
+  it('reports a group called without a subcommand as a missing argument', () => {
+    const e = commanderToCliError(commanderError('commander.help', '(outputHelp)'));
+    expect(e.kind).toBe(ErrorKind.MISSING_ARGUMENT);
+    expect(e.message).toBe('Missing subcommand');
+  });
+
+  it('does not double the "error:" prefix Commander already writes', () => {
+    const e = commanderToCliError(commanderError('commander.unknownOption', "error: unknown option '--nope'"));
+    expect(e.message).toBe("unknown option '--nope'");
+  });
+
+  it('redacts a secret the user typed into an unknown option', () => {
+    const secret = 'A'.repeat(40);
+    const e = commanderToCliError(commanderError('commander.unknownOption', `error: unknown option '--token=${secret}'`));
+    expect(e.message).not.toContain(secret);
+  });
+
+  it('leaves an error it does not recognise to the main classifier', () => {
+    expect(commanderToCliError(new Error('boom')).kind).toBe(ErrorKind.UNKNOWN);
+  });
+});
+
 describe('invariants', () => {
   const PUBLISHED_KINDS = new Set<string>(Object.values(ErrorKind));
+
+  // I-3: in JSON mode every non-zero exit is accompanied by a parsable body. That holds
+  // only if every class of failure — including argument parsing, which Commander used to
+  // handle itself — produces a CliError with a non-zero exit code.
+  it('I-3 — every failure class yields a serialisable error with a non-zero exit', () => {
+    const failures: unknown[] = [
+      Object.assign(new Error("error: unknown command 'nope'"), { code: 'commander.unknownCommand', exitCode: 1 }),
+      Object.assign(new Error('(outputHelp)'), { code: 'commander.help', exitCode: 1 }),
+      Object.assign(new Error('error: missing required argument'), { code: 'commander.missingArgument', exitCode: 1 }),
+      httpError(401),
+      httpError(403, { error: { kind: 'AUTH_FORBIDDEN', message: 'verify first' } }),
+      httpError(500),
+      { code: 'ECONNREFUSED' },
+      new Error('something unplanned'),
+    ];
+
+    for (const failure of failures) {
+      const e = commanderToCliError(failure);
+      expect(e.exitCode).toBeGreaterThan(0);
+      expect(() => JSON.parse(JSON.stringify(e.toJSON()))).not.toThrow();
+      expect(e.toJSON().error.message).toBeTruthy();
+    }
+  });
 
   // I-2: every kind the CLI emits is one an agent could have read from the published
   // enum. This is broken by what the *server* answers, not by our own call sites, so a

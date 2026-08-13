@@ -192,6 +192,33 @@ export function classifyError(err: unknown): CliError {
   });
 }
 
+const COMMANDER_KIND: Record<string, ErrorKind> = {
+  'commander.unknownCommand': ErrorKind.INVALID_INPUT,
+  'commander.unknownOption': ErrorKind.INVALID_INPUT,
+  'commander.missingArgument': ErrorKind.MISSING_ARGUMENT,
+  'commander.optionMissingArgument': ErrorKind.MISSING_ARGUMENT,
+  // A command group invoked without a subcommand reports itself as "help was shown".
+  'commander.help': ErrorKind.MISSING_ARGUMENT,
+};
+
+/**
+ * Argument-parsing failures reach the user through the same contract as everything
+ * else. The message echoes what was typed, so it is sanitized like any other.
+ */
+export function commanderToCliError(err: unknown): CliError {
+  const code = (err as { code?: string })?.code ?? '';
+  const kind = COMMANDER_KIND[code];
+  if (!kind) return classifyError(err);
+
+  const message = code === 'commander.help'
+    ? 'Missing subcommand'
+    : sanitizeErrorMessage((err as Error).message).replace(/^error: /, '');
+
+  return new CliError(kind, message, ExitCode.USAGE, {
+    hint: 'Run with --help for available commands and options.',
+  });
+}
+
 export function sanitizeErrorMessage(msg: string): string {
   return msg
     .replace(/https?:\/\/\S+/g, '<url>')

@@ -14,13 +14,25 @@ import { outputError, printJson } from './lib/output';
 import { collectCommands, formatCommandMap } from './lib/command-map';
 import { getAgentGuide } from './lib/guide';
 import { isQuietMode } from './lib/quiet';
-import { ExitCode, Errors } from './lib/errors';
+import { ExitCode, Errors, commanderToCliError } from './lib/errors';
 import { buildCommandSchema, SCHEMA_VERSION } from './lib/schema';
 
 declare const __CLI_VERSION__: string;
 const CLI_VERSION = typeof __CLI_VERSION__ !== 'undefined' ? __CLI_VERSION__ : '0.0.0-dev';
 
 const program = new Command();
+
+// Commander exits the process on a parse error, bypassing the JSON error contract.
+// This has to run before any subcommand is registered: each one copies the handler
+// at creation time, so a later call would only ever cover the root.
+program.exitOverride();
+program.configureOutput({
+  // Commander's own error line would land on stderr ahead of the JSON body.
+  outputError: () => {},
+  // Same for the help dump it prints when a group is called without a subcommand:
+  // in JSON mode stderr carries the error and nothing else.
+  writeErr: (str) => { if (!isQuietMode(program.opts())) process.stderr.write(str); },
+});
 
 program
   .name('numo')
@@ -315,7 +327,9 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
 
 program.parseAsync(process.argv)
   .catch((err) => {
-    outputError(err, !!program.opts().json);
+    // --help and --version land here too, having already written their output.
+    if (err?.exitCode === 0) process.exit(0);
+    outputError(commanderToCliError(err), isQuietMode(program.opts()));
   })
   .finally(() => {
     checkForUpdate(CLI_VERSION);

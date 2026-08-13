@@ -5,7 +5,7 @@ function run(args: string): string {
   return execSync(`npx tsx src/cli/cli.ts ${args}`, {
     encoding: 'utf8',
     timeout: 10000,
-    env: { ...process.env, NO_COLOR: '1' },
+    env: { ...process.env, NO_COLOR: '1', npm_config_loglevel: 'error' },
   });
 }
 
@@ -14,7 +14,7 @@ function runMayFail(args: string, extraEnv?: Record<string, string>): { stdout: 
     const stdout = execSync(`npx tsx src/cli/cli.ts ${args}`, {
       encoding: 'utf8',
       timeout: 10000,
-      env: { ...process.env, NO_COLOR: '1', ...extraEnv },
+      env: { ...process.env, NO_COLOR: '1', npm_config_loglevel: 'error', ...extraEnv },
     });
     return { stdout, stderr: '', status: 0 };
   } catch (err: any) {
@@ -95,5 +95,35 @@ describe('--version', () => {
   it('outputs 0.0.0-dev in dev mode', () => {
     const out = run('--version');
     expect(out.trim()).toBe('0.0.0-dev');
+  });
+});
+
+describe('argument-parsing failures', () => {
+  // Commander handles these itself by default, printing bare text and exiting 1 —
+  // outside the error contract every other failure obeys.
+  it.each([
+    ['tasks nonexistent --json', 'INVALID_INPUT'],
+    ['tasks list --badopt --json', 'INVALID_INPUT'],
+    ['tasks --json', 'MISSING_ARGUMENT'],
+  ])('%s → parsable JSON on stderr, exit 2', (args, kind) => {
+    const { stdout, stderr, status } = runMayFail(args);
+    expect(status).toBe(2);
+    expect(stdout).toBe('');
+    expect(JSON.parse(stderr).error).toMatchObject({ kind, code: 2 });
+  });
+
+  // A subcommand only inherits the handler if it was installed before the subcommand
+  // was created. The root-level case passes either way, which is what hid the gap.
+  it('applies at subcommand level, not just the root', () => {
+    expect(runMayFail('nosuchcommand --json').status).toBe(2);
+    expect(runMayFail('tasks nosuchsubcommand --json').status).toBe(2);
+  });
+
+  it('--help and --version stay successful and quiet on stderr', () => {
+    for (const flag of ['--help', '--version']) {
+      const { stderr, status } = runMayFail(flag);
+      expect(status).toBe(0);
+      expect(stderr).toBe('');
+    }
   });
 });
