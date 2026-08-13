@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as crypto from 'crypto';
 import { ensureConfigDir, getCredentialsPath } from '../lib/dirs';
 import { assertSafeApiBase } from '../lib/api-base';
+import { Errors } from '../lib/errors';
 
 interface Credentials {
   refreshToken: string;
@@ -58,7 +59,7 @@ export async function getIdToken(): Promise<string> {
   if (envToken) return envToken;
 
   const creds = loadCredentials();
-  if (!creds) throw new Error('Not logged in. Run: numo login');
+  if (!creds) throw Errors.authRequired();
 
   // Return cached token if still valid
   if (creds.idToken && creds.idTokenExpiry && Date.now() < creds.idTokenExpiry - 60000) {

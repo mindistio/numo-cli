@@ -9,6 +9,7 @@ import { listComments } from '../services/comments';
 import { listReplies } from '../services/replies';
 import { formatRelativeDate, truncate } from '../lib/format';
 import { promptForMissing } from '../lib/prompts';
+import { requireAuth } from '../lib/uid';
 import type { ApiPost, ApiComment, ApiReply, PostListResponse, CommentListResponse, ReplyListResponse } from '../types/api';
 
 function printPostLine(p: ApiPost) {
@@ -107,6 +108,7 @@ export function registerPostsCommands(program: Command) {
     .description('Get post details')
     .action(async function (this: Command, id?: string) {
       const opts = this.optsWithGlobals();
+      requireAuth();
       const postId = await promptForMissing({ value: id, message: 'Post ID' });
       await runGet({
         global: opts,
@@ -123,6 +125,7 @@ export function registerPostsCommands(program: Command) {
     .option('--limit <n>', 'Max results (<=50)', '20')
     .action(async function (this: Command, postId?: string) {
       const opts = this.optsWithGlobals();
+      requireAuth();
       const resolvedPostId = await promptForMissing({ value: postId, message: 'Post ID' });
       await runList({
         global: opts,
@@ -154,6 +157,7 @@ export function registerPostsCommands(program: Command) {
     .option('--limit <n>', 'Max results (<=50)', '20')
     .action(async function (this: Command, postId?: string, commentId?: string) {
       const opts = this.optsWithGlobals();
+      requireAuth();
       const resolvedPostId = await promptForMissing({ value: postId, message: 'Post ID' });
       const resolvedCommentId = await promptForMissing({ value: commentId, message: 'Comment ID' });
       await runList({

@@ -66,9 +66,7 @@ export const Errors = {
     }),
 
   notFound: (resource: string, id?: string) =>
-    new CliError(ErrorKind.NOT_FOUND, `${resource} not found${id ? `: ${id}` : ''}`, ExitCode.NOT_FOUND, {
-      suggestion: `numo ${resource.toLowerCase()}s list`,
-    }),
+    new CliError(ErrorKind.NOT_FOUND, `${resource} not found${id ? `: ${id}` : ''}`, ExitCode.NOT_FOUND),
 
   missingArg: (name: string, flag: string) =>
     new CliError(ErrorKind.MISSING_ARGUMENT, `${name} is required`, ExitCode.USAGE, {
@@ -104,28 +102,39 @@ export const Errors = {
     }),
 };
 
-export function classifyError(err: unknown): CliError {
-  if (err instanceof CliError) return err;
+const KIND_EXIT: Readonly<Partial<Record<ErrorKind, number>>> = {
+  [ErrorKind.AUTH_REQUIRED]: ExitCode.NO_PERM,
+  [ErrorKind.AUTH_EXPIRED]: ExitCode.NO_PERM,
+  [ErrorKind.AUTH_FORBIDDEN]: ExitCode.NO_PERM,
+  [ErrorKind.INVALID_INPUT]: ExitCode.USAGE,
+  [ErrorKind.MISSING_ARGUMENT]: ExitCode.USAGE,
+  [ErrorKind.NOT_FOUND]: ExitCode.NOT_FOUND,
+  [ErrorKind.CONFLICT]: ExitCode.CONFLICT,
+  [ErrorKind.RATE_LIMITED]: ExitCode.TEMP_FAIL,
+  [ErrorKind.NETWORK_ERROR]: ExitCode.UNAVAILABLE,
+  [ErrorKind.TIMEOUT]: ExitCode.TEMP_FAIL,
+  [ErrorKind.SERVICE_UNAVAILABLE]: ExitCode.UNAVAILABLE,
+  [ErrorKind.CONFIG_ERROR]: ExitCode.CONFIG,
+};
 
-  const axiosErr = err as {
-    code?: string;
-    response?: {
-      status?: number;
-      headers?: Record<string, string>;
-      data?: { error?: { code?: number; message?: string; status?: string } };
-    };
-    message?: string;
+const ERROR_KINDS = new Set<string>(Object.values(ErrorKind));
+
+interface HttpErrorShape {
+  code?: string;
+  response?: {
+    status?: number;
+    headers?: Record<string, string>;
+    data?: { error?: { kind?: string; message?: string; retryable?: boolean; retryAfter?: number } };
   };
+  message?: string;
+}
 
-  // Network errors (no response received)
-  if (axiosErr.code === 'ECONNABORTED' || axiosErr.code === 'ETIMEDOUT') return Errors.timeout();
-  if (axiosErr.code === 'ENOTFOUND' || axiosErr.code === 'EAI_AGAIN') return Errors.networkError();
-  if (axiosErr.code === 'ECONNREFUSED' || axiosErr.code === 'ECONNRESET') {
-    return Errors.networkError('Service may be temporarily down. Try again in a moment.');
+function fromStatus(status: number, headers?: Record<string, string>): CliError | null {
+  if (status === 400) {
+    return new CliError(ErrorKind.INVALID_INPUT, 'Invalid request', ExitCode.USAGE, {
+      hint: 'Run with --help to check the accepted arguments.',
+    });
   }
-
-  // HTTP status based
-  const status = axiosErr.response?.status;
   if (status === 401) return Errors.authRequired();
   if (status === 403) {
     return new CliError(ErrorKind.AUTH_FORBIDDEN, 'Access denied', ExitCode.NO_PERM, {
@@ -133,23 +142,54 @@ export function classifyError(err: unknown): CliError {
     });
   }
   if (status === 404) return Errors.notFound('Resource');
+  if (status === 409) return new CliError(ErrorKind.CONFLICT, 'Already exists', ExitCode.CONFLICT);
   if (status === 429) {
-    const retryAfter = parseInt(axiosErr.response?.headers?.['retry-after'] ?? '');
+    const retryAfter = parseInt(headers?.['retry-after'] ?? '');
     return Errors.rateLimited(isNaN(retryAfter) ? undefined : retryAfter);
   }
-  if (status && status >= 500) {
+  if (status >= 500) {
     return new CliError(ErrorKind.SERVICE_UNAVAILABLE, 'Server error', ExitCode.UNAVAILABLE, {
       hint: 'This is on our end. Try again in a moment.',
       retryable: true,
     });
   }
+  return null;
+}
 
-  // Fallback: extract message from error, sanitized
-  const body = axiosErr.response?.data;
-  const raw = body?.error?.message ?? axiosErr.message ?? 'Unknown error';
-  const message = sanitizeErrorMessage(raw);
+/**
+ * The single path from any thrown value to the error the user sees.
+ *
+ * Status first, structured body on top: only the status table carries `suggestion`,
+ * `hint` and the Retry-After header, so the body overrides just `kind` and `message`.
+ * Showing a generic "Access denied" over a server explanation is the failure this exists to avoid.
+ */
+export function classifyError(err: unknown): CliError {
+  if (err instanceof CliError) return err;
 
-  return new CliError(ErrorKind.UNKNOWN, message, ExitCode.GENERAL, { cause: err });
+  // `throw` accepts any value, and this is the last stop before the user sees it.
+  const httpErr = (typeof err === 'object' && err !== null ? err : { message: String(err ?? '') }) as HttpErrorShape;
+
+  if (httpErr.code === 'ECONNABORTED' || httpErr.code === 'ETIMEDOUT') return Errors.timeout();
+  if (httpErr.code === 'ENOTFOUND' || httpErr.code === 'EAI_AGAIN') return Errors.networkError();
+  if (httpErr.code === 'ECONNREFUSED' || httpErr.code === 'ECONNRESET') {
+    return Errors.networkError('Service may be temporarily down. Try again in a moment.');
+  }
+
+  const status = httpErr.response?.status;
+  const base = status ? fromStatus(status, httpErr.response?.headers) : null;
+  const body = httpErr.response?.data?.error;
+
+  const kind = body?.kind && ERROR_KINDS.has(body.kind) ? (body.kind as ErrorKind) : base?.kind;
+  const message = sanitizeErrorMessage(body?.message ?? base?.message ?? httpErr.message ?? 'Unknown error');
+
+  if (!kind) return new CliError(ErrorKind.UNKNOWN, message, ExitCode.GENERAL, { cause: err });
+
+  return new CliError(kind, message, KIND_EXIT[kind] ?? base?.exitCode ?? ExitCode.GENERAL, {
+    ...base?.options,
+    retryable: base?.options.retryable ?? body?.retryable,
+    retryAfter: base?.options.retryAfter ?? body?.retryAfter,
+    cause: err,
+  });
 }
 
 export function sanitizeErrorMessage(msg: string): string {
