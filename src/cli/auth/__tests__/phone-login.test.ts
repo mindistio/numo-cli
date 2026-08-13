@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // Phone auth is a two-step capability handshake: /phone/start hands the CLI a
-// pollSecret; /phone/poll requires it back (400 without it). This locks that the
-// CLI actually carries the secret onto the poll URL — the bug this test guards.
+// pollSecret; /phone/poll rejects the request without it. This locks that the CLI
+// carries the secret back, and that it never travels in the URL.
 
 vi.mock('../../lib/http', () => ({ http: { post: vi.fn(), get: vi.fn() } }));
 vi.mock('../../lib/prompts', () => ({ promptText: vi.fn().mockResolvedValue('+380501234567') }));
@@ -15,7 +15,7 @@ describe('authenticateWithPhone', () => {
   beforeEach(() => vi.clearAllMocks());
   afterEach(() => vi.useRealTimers());
 
-  it('polls /phone/poll with BOTH the session id and the pollSecret from /phone/start', async () => {
+  it('polls with the session id in the URL and the pollSecret in a header', async () => {
     const { http } = await import('../../lib/http');
     vi.mocked(http.post).mockResolvedValueOnce({
       data: { sessionId: 'sess-1', pollSecret: 'secret-xyz', userCode: 'PAIR42', verifyUrl: 'http://localhost:3000/auth/phone/verify?session=sess-1' },
@@ -33,9 +33,12 @@ describe('authenticateWithPhone', () => {
     const result = await promise;
 
     expect(result).toMatchObject({ idToken: 'tok', uid: 'u1', refreshToken: 'rt' });
-    const polledUrl = vi.mocked(http.get).mock.calls[0][0] as string;
+    const [polledUrl, pollOpts] = vi.mocked(http.get).mock.calls[0];
     expect(polledUrl).toContain('session=sess-1');
-    expect(polledUrl).toContain('secret=secret-xyz'); // regression: without this the API 400s
+    // Contract: the secret reaches the server. Invariant: never through the URL,
+    // which proxies, access logs and shell history all retain.
+    expect(pollOpts?.headers).toMatchObject({ 'x-poll-secret': 'secret-xyz' });
+    expect(polledUrl).not.toContain('secret-xyz');
 
     // The device-grant userCode must be shown to the user — the verify page
     // 400s without it, and this terminal is the ONLY place it appears.

@@ -46,7 +46,12 @@ export async function authenticateWithPhone(spinner: { start: (msg?: string) => 
     await new Promise((r) => setTimeout(r, POLL_INTERVAL));
 
     try {
-      const pollResp = await http.get(`${API_BASE}/api/auth/phone/poll?session=${encodeURIComponent(sessionId)}&secret=${encodeURIComponent(pollSecret)}`);
+      // pollSecret grants the session's tokens — it stays out of the URL, which
+      // proxies and access logs retain.
+      const pollResp = await http.get(
+        `${API_BASE}/api/auth/phone/poll?session=${encodeURIComponent(sessionId)}`,
+        { headers: { 'x-poll-secret': pollSecret } },
+      );
 
       if (pollResp.status === 200 && pollResp.data.idToken) {
         return {
