@@ -155,6 +155,9 @@ export interface ProfileResponse {
 export interface MeResponse {
   uid: string;
   email: string | null;
-  emailVerified: boolean;
-  canCreateTasks: boolean;
+  // Optional on purpose: the CLI ships independently of the API, so it routinely
+  // talks to a server older than itself. Absent means "not reported", which is not
+  // the same as false and must never be rendered as one.
+  emailVerified?: boolean;
+  canCreateTasks?: boolean;
 }

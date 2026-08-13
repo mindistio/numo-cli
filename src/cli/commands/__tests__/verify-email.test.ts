@@ -55,6 +55,15 @@ describe('numo verify-email', () => {
     expect(mocked.resend).not.toHaveBeenCalled();
   });
 
+  // The CLI ships independently of the API, so it routinely talks to a server
+  // older than itself. A field the server never sent is unknown, not false — and
+  // the resend still happens, because that is what was asked for.
+  it('still resends when the server does not report verification state', async () => {
+    mocked.getMe.mockResolvedValue({ uid: 'u1', email: 'a@b.com' });
+    await run([]);
+    expect(mocked.resend).toHaveBeenCalledOnce();
+  });
+
   it('redeems the code when one is given', async () => {
     await run(['--code', 'oob-123']);
     expect(mocked.confirm).toHaveBeenCalledWith('oob-123');

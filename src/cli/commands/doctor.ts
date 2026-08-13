@@ -163,14 +163,21 @@ async function runChecks(): Promise<CheckResult[]> {
     // tell a user who has just verified that they are still blocked.
     try {
       const me = await getMe();
-      checks.push({
-        name: 'verification',
-        status: me.canCreateTasks ? 'ok' : 'fail',
-        message: me.canCreateTasks
-          ? `Email ${me.emailVerified ? 'verified' : 'unverified — not required for this account'}`
-          : 'Email not verified — creating tasks is blocked',
-        fix: me.canCreateTasks ? undefined : 'numo verify-email',
-      });
+      if (me.canCreateTasks === undefined) {
+        // An older server does not report this. Saying "blocked" here would be the
+        // CLI inventing a refusal the server never made — and it fails the whole
+        // health check, which in CI reads as a broken install.
+        checks.push({ name: 'verification', status: 'warn', message: 'Server does not report verification status' });
+      } else {
+        checks.push({
+          name: 'verification',
+          status: me.canCreateTasks ? 'ok' : 'fail',
+          message: me.canCreateTasks
+            ? `Email ${me.emailVerified ? 'verified' : 'unverified — not required for this account'}`
+            : 'Email not verified — creating tasks is blocked',
+          fix: me.canCreateTasks ? undefined : 'numo verify-email',
+        });
+      }
     } catch (err: unknown) {
       checks.push({
         name: 'verification',

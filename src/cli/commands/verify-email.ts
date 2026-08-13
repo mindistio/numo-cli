@@ -33,9 +33,11 @@ Reading it needs access to the inbox, not a browser.`)
       }
 
       // Asking the server first means an already-verified user is told so instead
-      // of being sent an email they have no reason to open.
+      // of being sent an email they have no reason to open. An older server does
+      // not report the flag at all; then the resend goes ahead — it is what was
+      // asked for — but the output does not pretend to know the state either way.
       const me = await getMe();
-      if (me.emailVerified) {
+      if (me.emailVerified === true) {
         if (asJson) printJson(me);
         else console.log(pc.green('Email already verified.'));
         return;
