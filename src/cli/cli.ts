@@ -8,6 +8,7 @@ import { registerTasksCommands } from './commands/tasks';
 import { registerPostsCommands } from './commands/posts';
 import { registerProfileCommands } from './commands/profile';
 import { registerDoctorCommand } from './commands/doctor';
+import { registerVerifyEmailCommand } from './commands/verify-email';
 import { migrateIfNeeded } from './lib/dirs';
 import { checkForUpdate } from './lib/update-check';
 import { outputError, printJson } from './lib/output';
@@ -16,6 +17,7 @@ import { getAgentGuide } from './lib/guide';
 import { isQuietMode } from './lib/quiet';
 import { ExitCode, Errors, commanderToCliError } from './lib/errors';
 import { buildCommandSchema, SCHEMA_VERSION } from './lib/schema';
+import { decodeTokenClaims, verificationClaim } from './lib/token';
 
 declare const __CLI_VERSION__: string;
 const CLI_VERSION = typeof __CLI_VERSION__ !== 'undefined' ? __CLI_VERSION__ : '0.0.0-dev';
@@ -74,6 +76,8 @@ Examples:
   $ numo login --phone                                # SMS OTP flow
   $ NUMO_LOGIN_EMAIL=… NUMO_LOGIN_PASSWORD=… numo login --json   # Non-interactive (CI/agents)`);
 
+registerVerifyEmailCommand(program);
+
 program
   .command('logout')
   .description('Clear stored credentials')
@@ -97,13 +101,23 @@ Examples:
 If NUMO_TOKEN env var is set, it is not cleared by logout. Unset it separately:
   $ unset NUMO_TOKEN`);
 
+function printVerification(emailVerified: boolean | null) {
+  if (emailVerified === null) return;
+  const value = emailVerified ? pc.green('yes') : pc.yellow('no');
+  console.log(`  ${pc.bold('Email verified')}  ${value} ${pc.dim('(from the stored token — numo doctor asks the server)')}`);
+}
+
 program
   .command('whoami')
   .description('Show current auth status (no API call)')
   .addHelpText('after', `
 Examples:
   $ numo whoami
-  $ numo whoami --json   # → {"email":"...","uid":"...","tokenValid":true,"expiresIn":N,"source":"..."}`)
+  $ numo whoami --json   # → {"email":"...","uid":"...","tokenValid":true,"expiresIn":N,"source":"..."}
+
+emailVerified here is read from the stored token, which keeps its old value for up
+to an hour after the link is clicked. For the authoritative answer, make the request
+and read the response — or run numo doctor.`)
   .action(function(this: Command) {
     const opts = this.optsWithGlobals();
     const asJson = isQuietMode(opts);
@@ -116,30 +130,20 @@ Examples:
     // NUMO_TOKEN tokens do NOT auto-refresh — long-running scripts must use
     // NUMO_LOGIN_EMAIL / NUMO_LOGIN_PASSWORD instead.
     if (envToken) {
-      let tokenValid = false;
-      let expiresIn = 0;
-      let email: string | null = null;
-      let uid: string | null = null;
-      try {
-        const payloadB64 = envToken.split('.')[1] ?? '';
-        const payload = JSON.parse(Buffer.from(payloadB64, 'base64').toString('utf8'));
-        if (typeof payload.exp === 'number') {
-          const expMs = payload.exp * 1000;
-          tokenValid = Date.now() < expMs;
-          expiresIn = Math.max(0, Math.floor((expMs - Date.now()) / 1000));
-        }
-        if (typeof payload.email === 'string') email = payload.email;
-        if (typeof payload.user_id === 'string') uid = payload.user_id;
-        else if (typeof payload.sub === 'string') uid = payload.sub;
-      } catch {
-        // Malformed token — leave tokenValid=false.
-      }
+      const claims = decodeTokenClaims(envToken);
+      const tokenValid = !!claims?.expMs && Date.now() < claims.expMs;
+      const expiresIn = claims?.expMs ? Math.max(0, Math.floor((claims.expMs - Date.now()) / 1000)) : 0;
+      const email = claims?.email ?? null;
+      const uid = claims?.uid ?? null;
+      const verification = verificationClaim(claims);
+
       if (asJson) {
-        printJson({ email, uid, tokenValid, expiresIn, source: 'NUMO_TOKEN', autoRefresh: false });
+        printJson({ email, uid, tokenValid, expiresIn, source: 'NUMO_TOKEN', autoRefresh: false, ...verification });
       } else {
         if (email) console.log(`  ${pc.bold('Email')}  ${email}`);
         if (uid) console.log(`  ${pc.bold('UID')}    ${uid}`);
         console.log(`  ${pc.bold('Token')}  ${tokenValid ? pc.green(`valid (expires in ${Math.floor(expiresIn / 60)}m)`) : pc.red('expired or malformed')}`);
+        printVerification(verification.emailVerified);
         console.log(`  ${pc.bold('Auth')}   NUMO_TOKEN env var ${pc.dim('(no auto-refresh; use NUMO_LOGIN_EMAIL/PASSWORD for long sessions)')}`);
       }
       // An expired/malformed NUMO_TOKEN is not usable and does not auto-refresh —
@@ -157,13 +161,15 @@ Examples:
     const tokenValid = !!(creds.idToken && creds.idTokenExpiry && Date.now() < creds.idTokenExpiry);
     const expiresIn = creds.idTokenExpiry ? Math.max(0, Math.floor((creds.idTokenExpiry - Date.now()) / 1000)) : 0;
     const source = 'credentials_file';
+    const verification = verificationClaim(decodeTokenClaims(creds.idToken));
 
     if (asJson) {
-      printJson({ email: creds.email, uid: creds.uid, tokenValid, expiresIn, source, autoRefresh: true });
+      printJson({ email: creds.email, uid: creds.uid, tokenValid, expiresIn, source, autoRefresh: true, ...verification });
     } else {
       console.log(`  ${pc.bold('Email')}  ${creds.email}`);
       console.log(`  ${pc.bold('UID')}    ${creds.uid}`);
       console.log(`  ${pc.bold('Token')}  ${tokenValid ? pc.green(`valid (expires in ${Math.floor(expiresIn / 60)}m)`) : pc.yellow('expired (will auto-refresh)')}`);
+      printVerification(verification.emailVerified);
       console.log(`  ${pc.bold('Auth')}   ${getCredentialsPath()}`);
     }
   });

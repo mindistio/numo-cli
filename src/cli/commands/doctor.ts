@@ -10,6 +10,7 @@ import { printJson } from '../lib/output';
 import { isQuietMode } from '../lib/quiet';
 import { SYM } from '../lib/symbols';
 import { sanitizeErrorMessage } from '../lib/errors';
+import { getMe } from '../services/me';
 
 interface CheckResult {
   name: string;
@@ -154,6 +155,27 @@ async function runChecks(): Promise<CheckResult[]> {
         status: 'fail',
         message: `Authenticated request error: ${errMessage(err)}`,
         fix: 'numo login',
+      });
+    }
+
+    // Asked live, because the stored token's email_verified claim keeps its old
+    // value for up to an hour after the link is clicked — long enough for doctor to
+    // tell a user who has just verified that they are still blocked.
+    try {
+      const me = await getMe();
+      checks.push({
+        name: 'verification',
+        status: me.canCreateTasks ? 'ok' : 'fail',
+        message: me.canCreateTasks
+          ? `Email ${me.emailVerified ? 'verified' : 'unverified — not required for this account'}`
+          : 'Email not verified — creating tasks is blocked',
+        fix: me.canCreateTasks ? undefined : 'numo verify-email',
+      });
+    } catch (err: unknown) {
+      checks.push({
+        name: 'verification',
+        status: 'warn',
+        message: `Verification status unavailable: ${errMessage(err)}`,
       });
     }
   }

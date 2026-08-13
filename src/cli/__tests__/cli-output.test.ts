@@ -9,18 +9,23 @@ afterEach(() => {
   while (tempDirs.length) fs.rmSync(tempDirs.pop()!, { recursive: true, force: true });
 });
 
-function configDir(withCredentials = false): string {
+function configDir(withCredentials = false, idToken?: string): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'numo-cli-test-'));
   tempDirs.push(dir);
   if (withCredentials) {
-    const creds = { refreshToken: 'rt', uid: 'file-uid', email: 'file@example.com' };
+    const creds = { refreshToken: 'rt', uid: 'file-uid', email: 'file@example.com', idToken };
     fs.writeFileSync(path.join(dir, 'credentials.json'), JSON.stringify(creds), { mode: 0o600 });
   }
   return dir;
 }
 
-function unexpiredToken(): string {
-  const claims = { exp: Math.floor(Date.now() / 1000) + 3600, email: 'env@example.com', user_id: 'env-uid' };
+function unexpiredToken(extraClaims: Record<string, unknown> = {}): string {
+  const claims = {
+    exp: Math.floor(Date.now() / 1000) + 3600,
+    email: 'env@example.com',
+    user_id: 'env-uid',
+    ...extraClaims,
+  };
   return `x.${Buffer.from(JSON.stringify(claims)).toString('base64url')}.y`;
 }
 
@@ -128,6 +133,46 @@ describe('whoami', () => {
       uid: 'env-uid',
       source: 'NUMO_TOKEN',
       autoRefresh: false,
+    });
+  });
+
+  // Contract: the verification value never appears without the markers saying it
+  // came from a stored token. An agent that treats it as authoritative will tell a
+  // user who verified a minute ago that they are still blocked — the claim is
+  // minted with the token and does not change until the token is replaced.
+  it('marks emailVerified as a cached, stale reading', () => {
+    const { stdout } = runMayFail('whoami --json', {
+      NUMO_CONFIG_DIR: configDir(),
+      NUMO_TOKEN: unexpiredToken({ email_verified: true }),
+    });
+    expect(JSON.parse(stdout)).toMatchObject({
+      emailVerified: true,
+      emailVerifiedSource: 'cached_token',
+      emailVerifiedStale: true,
+    });
+  });
+
+  it('reads the claim from the credentials file too, not only from NUMO_TOKEN', () => {
+    const { stdout } = runMayFail('whoami --json', {
+      NUMO_CONFIG_DIR: configDir(true, unexpiredToken({ email_verified: false })),
+      NUMO_TOKEN: '',
+    });
+    expect(JSON.parse(stdout)).toMatchObject({
+      source: 'credentials_file',
+      emailVerified: false,
+      emailVerifiedSource: 'cached_token',
+    });
+  });
+
+  it('reports null rather than false when there is no token to read', () => {
+    const { stdout } = runMayFail('whoami --json', {
+      NUMO_CONFIG_DIR: configDir(true),
+      NUMO_TOKEN: '',
+    });
+    expect(JSON.parse(stdout)).toMatchObject({
+      emailVerified: null,
+      emailVerifiedSource: null,
+      emailVerifiedStale: null,
     });
   });
 });

@@ -151,3 +151,10 @@ export interface ProfileResponse {
   username: string | null;
   photoURL: string | null;
 }
+
+export interface MeResponse {
+  uid: string;
+  email: string | null;
+  emailVerified: boolean;
+  canCreateTasks: boolean;
+}

@@ -37,6 +37,29 @@ numo tasks list --json
 
 `NUMO_TOKEN` does **not** auto-refresh — it is treated as opaque, single-use credentials. When the ID token expires (typically ~1 hour after issue), API calls will start returning 401 with no recovery path. Use this only for short scripts; otherwise prefer the email/password path above. Inspect remaining validity with `numo whoami --json` (decodes the JWT `exp` claim and reports `autoRefresh: false`).
 
+### Email verification
+
+Accounts created after the requirement was introduced need a verified email (or a
+verified phone) before `numo tasks create` will work; older accounts are exempt and
+keep working unverified. Everything else — listing, editing, completing, deleting —
+is never gated.
+
+```bash
+numo verify-email --json                 # resend the verification email
+numo verify-email --code <oobCode>       # redeem the code from the link
+```
+
+`--code` takes the `oobCode` query parameter of the link in the verification email.
+It removes the need for a **browser**, not for an inbox: an agent that can read the
+mailbox can finish verification in the terminal.
+
+**Do not gate your own calls on `numo whoami`.** Its `emailVerified` is read from
+the stored token, whose claim is fixed when the token is minted and stays stale for
+up to an hour after the link is clicked — the payload says so via
+`emailVerifiedSource: "cached_token"` and `emailVerifiedStale: true`. The
+authoritative answer is the response to the request you actually make; `numo doctor`
+asks the server live and reports it as the `verification` check.
+
 **Custom server host:** by default credentials are only sent to `*.numo.ai` (or loopback). To point `NUMO_API_URL` at a self-hosted/staging host, set `NUMO_ALLOW_CUSTOM_HOST=1` — otherwise credential-sending commands fail with a `CONFIG_ERROR` (exit 78). Offline commands (`commands`, `schema`, `--help`) are never gated.
 
 ## JSON Mode
