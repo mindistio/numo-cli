@@ -18,7 +18,7 @@ export interface AuthResult {
   idTokenExpiry?: number;
 }
 
-async function postLogin(email: string, password: string): Promise<AuthResult> {
+export async function postLogin(email: string, password: string): Promise<AuthResult> {
   assertSafeApiBase();
   const resp = await http.post(`${API_BASE}/api/auth/login`, { email, password });
   return {

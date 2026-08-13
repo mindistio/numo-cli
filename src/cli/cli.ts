@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import pc from 'picocolors';
 import { login } from './auth/login';
+import { register } from './auth/register';
 import { clearCredentials, loadCredentials } from './auth/credentials';
 import { getCredentialsPath } from './lib/dirs';
 import { registerTasksCommands } from './commands/tasks';
@@ -15,7 +16,7 @@ import { outputError, printJson } from './lib/output';
 import { collectCommands, formatCommandMap } from './lib/command-map';
 import { getAgentGuide } from './lib/guide';
 import { isQuietMode } from './lib/quiet';
-import { ExitCode, Errors, commanderToCliError } from './lib/errors';
+import { ExitCode, Errors, CliError, ErrorKind, commanderToCliError } from './lib/errors';
 import { buildCommandSchema, SCHEMA_VERSION } from './lib/schema';
 import { decodeTokenClaims, verificationClaim } from './lib/token';
 
@@ -75,6 +76,19 @@ Examples:
   $ numo login                                        # Interactive (email/password)
   $ numo login --phone                                # SMS OTP flow
   $ NUMO_LOGIN_EMAIL=… NUMO_LOGIN_PASSWORD=… numo login --json   # Non-interactive (CI/agents)`);
+
+program
+  .command('register')
+  .alias('signup')
+  .description('Create a Numo account and sign in')
+  .action(async function (this: Command) { await register(this.optsWithGlobals(), program); })
+  .addHelpText('after', `
+Examples:
+  $ numo register                                       # Interactive
+  $ NUMO_LOGIN_EMAIL=… NUMO_LOGIN_PASSWORD=… numo register --json   # Non-interactive (CI/agents)
+
+Creating an account signs you in immediately. A verification link is emailed to the
+address; some actions stay unavailable until you follow it or run numo verify-email.`);
 
 registerVerifyEmailCommand(program);
 
@@ -336,6 +350,20 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
     process.stderr.write('\r\x1b[K');
     process.exit(128 + (signal === 'SIGINT' ? 2 : 15));
   });
+}
+
+// A bare `numo` from someone with no credentials is a first run, not a usage error.
+// Every command below needs an account, so name the two ways to get one instead of
+// dumping help for all of them. Deliberately does not start a flow — auto-launching
+// one is hostile in a script and in CI.
+if (process.argv.length <= 2 && !process.env.NUMO_TOKEN && !loadCredentials()) {
+  outputError(
+    new CliError(ErrorKind.AUTH_REQUIRED, 'Not signed in', ExitCode.NO_PERM, {
+      suggestion: 'numo register',
+      hint: 'Already have an account? Run: numo login',
+    }),
+    isQuietMode(program.opts()),
+  );
 }
 
 program.parseAsync(process.argv)
