@@ -49,9 +49,19 @@ describe('classifyError — structured body over status', () => {
     expect(e.message).toBe('Verify your email to create tasks');
   });
 
-  it('keeps the hint from the status table — a structured body never carries one', () => {
-    const e = classifyError(httpError(403, { error: { kind: 'AUTH_FORBIDDEN', message: 'nope' } }));
-    expect(e.options.hint).toBeTruthy();
+  it('keeps the status hint when the server said nothing', () => {
+    expect(classifyError(httpError(403)).options.hint).toBeTruthy();
+    expect(classifyError(httpError(400)).options.hint).toBeTruthy();
+  });
+
+  // The status hint is what we can say knowing only the status. Once the server has
+  // explained itself, that explanation is the guidance — a 400 whose body reads
+  // "Verification code is invalid or has expired" does not want "run with --help"
+  // stapled underneath, which is advice pointing at the wrong problem.
+  it('drops the generic status hint once the server explains itself', () => {
+    const e = classifyError(httpError(400, { error: { kind: 'INVALID_INPUT', message: 'Code expired. Request a new one.' } }));
+    expect(e.message).toBe('Code expired. Request a new one.');
+    expect(e.options.hint).toBeUndefined();
   });
 
   it('keeps the suggestion from the status table', () => {

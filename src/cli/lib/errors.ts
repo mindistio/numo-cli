@@ -186,6 +186,11 @@ export function classifyError(err: unknown): CliError {
 
   return new CliError(kind, message, KIND_EXIT[kind] ?? base?.exitCode ?? ExitCode.GENERAL, {
     ...base?.options,
+    // A hint in the status table is generic by construction — it is what we can say
+    // knowing only the status. Once the server has explained itself, that explanation
+    // is the guidance, and "run with --help" over the top of it points the wrong way.
+    // A suggestion is a command to run, so it survives.
+    hint: body?.message != null ? undefined : base?.options.hint,
     retryable: base?.options.retryable ?? body?.retryable,
     retryAfter: base?.options.retryAfter ?? body?.retryAfter,
     cause: err,
