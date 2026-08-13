@@ -1,5 +1,28 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import { execSync } from 'child_process';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+
+const tempDirs: string[] = [];
+afterEach(() => {
+  while (tempDirs.length) fs.rmSync(tempDirs.pop()!, { recursive: true, force: true });
+});
+
+function configDir(withCredentials = false): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'numo-cli-test-'));
+  tempDirs.push(dir);
+  if (withCredentials) {
+    const creds = { refreshToken: 'rt', uid: 'file-uid', email: 'file@example.com' };
+    fs.writeFileSync(path.join(dir, 'credentials.json'), JSON.stringify(creds), { mode: 0o600 });
+  }
+  return dir;
+}
+
+function unexpiredToken(): string {
+  const claims = { exp: Math.floor(Date.now() / 1000) + 3600, email: 'env@example.com', user_id: 'env-uid' };
+  return `x.${Buffer.from(JSON.stringify(claims)).toString('base64url')}.y`;
+}
 
 function run(args: string): string {
   return execSync(`npx tsx src/cli/cli.ts ${args}`, {
@@ -88,6 +111,56 @@ describe('whoami (not logged in)', () => {
   it('exits with code 77', () => {
     const { status } = runMayFail('whoami', { HOME: '/tmp/numo-test-no-creds', NUMO_CONFIG_DIR: '/tmp/numo-test-no-creds' });
     expect(status).toBe(77);
+  });
+});
+
+describe('whoami', () => {
+  // Contract: whoami describes the identity the API calls will actually use. NUMO_TOKEN
+  // wins over the credentials file there, so it has to win here — otherwise whoami
+  // vouches for an account the next request will not be made as.
+  it('reports NUMO_TOKEN even when a credentials file is also present', () => {
+    const { stdout } = runMayFail('whoami --json', {
+      NUMO_CONFIG_DIR: configDir(true),
+      NUMO_TOKEN: unexpiredToken(),
+    });
+    expect(JSON.parse(stdout)).toMatchObject({
+      email: 'env@example.com',
+      uid: 'env-uid',
+      source: 'NUMO_TOKEN',
+      autoRefresh: false,
+    });
+  });
+});
+
+describe('logout', () => {
+  it('deletes the credentials and reports it in JSON mode', () => {
+    const dir = configDir(true);
+    const { stdout, status } = runMayFail('logout --json', { NUMO_CONFIG_DIR: dir, NUMO_TOKEN: '' });
+    expect(status).toBe(0);
+    expect(JSON.parse(stdout)).toMatchObject({ loggedOut: true });
+    expect(fs.existsSync(path.join(dir, 'credentials.json'))).toBe(false);
+  });
+
+  it('says NUMO_TOKEN is still set, because clearing the file does not de-authenticate', () => {
+    const { stdout } = runMayFail('logout --json', {
+      NUMO_CONFIG_DIR: configDir(true),
+      NUMO_TOKEN: unexpiredToken(),
+    });
+    expect(JSON.parse(stdout).envTokenStillSet).toBe(true);
+  });
+
+  it('succeeds when there is nothing to clear', () => {
+    expect(runMayFail('logout --json', { NUMO_CONFIG_DIR: configDir() }).status).toBe(0);
+  });
+
+  it('fails loudly when the credentials cannot be removed', () => {
+    // Previously every failure here was swallowed, so logout reported success while
+    // the refresh token stayed on disk.
+    const dir = configDir();
+    fs.mkdirSync(path.join(dir, 'credentials.json'));
+    const { status, stderr } = runMayFail('logout --json', { NUMO_CONFIG_DIR: dir });
+    expect(status).not.toBe(0);
+    expect(JSON.parse(stderr).error).toBeDefined();
   });
 });
 

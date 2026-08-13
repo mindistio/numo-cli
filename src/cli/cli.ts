@@ -77,10 +77,16 @@ Examples:
 program
   .command('logout')
   .description('Clear stored credentials')
-  .action(() => {
+  .action(function (this: Command) {
     clearCredentials();
+    const envTokenStillSet = !!process.env.NUMO_TOKEN;
+
+    if (isQuietMode(this.optsWithGlobals())) {
+      printJson({ loggedOut: true, envTokenStillSet });
+      return;
+    }
     console.log(pc.green('Logged out.'));
-    if (process.env.NUMO_TOKEN) {
+    if (envTokenStillSet) {
       console.log(pc.yellow('\n  Note: NUMO_TOKEN env var is still set. Unset it to fully de-authenticate.'));
     }
   })
@@ -103,13 +109,13 @@ Examples:
     const asJson = isQuietMode(opts);
 
     const envToken = process.env.NUMO_TOKEN;
-    const creds = loadCredentials();
 
-    // NUMO_TOKEN env path: no credentials file needed. Decode the JWT `exp`
-    // claim so we can report real validity instead of "AUTH_REQUIRED".
+    // NUMO_TOKEN takes priority over the credentials file, matching getIdToken —
+    // otherwise whoami would describe an identity the API calls never use. Its JWT
+    // `exp` claim is decoded so validity is reported instead of "AUTH_REQUIRED".
     // NUMO_TOKEN tokens do NOT auto-refresh — long-running scripts must use
     // NUMO_LOGIN_EMAIL / NUMO_LOGIN_PASSWORD instead.
-    if (!creds && envToken) {
+    if (envToken) {
       let tokenValid = false;
       let expiresIn = 0;
       let email: string | null = null;
@@ -142,6 +148,7 @@ Examples:
       return;
     }
 
+    const creds = loadCredentials();
     if (!creds) {
       outputError(Errors.authRequired(), asJson);
       return;

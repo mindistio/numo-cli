@@ -41,13 +41,11 @@ export function saveCredentials(creds: Credentials) {
 }
 
 export function clearCredentials() {
-  try {
-    const credPath = getCredentialsPath();
-    const stat = fs.statSync(credPath);
-    // Overwrite with random data before deleting
-    fs.writeFileSync(credPath, crypto.randomBytes(stat.size));
-    fs.unlinkSync(credPath);
-  } catch {}
+  const credPath = getCredentialsPath();
+  if (!fs.existsSync(credPath)) return;
+  // Overwrite before unlinking so the refresh token is not left in freed blocks.
+  fs.writeFileSync(credPath, crypto.randomBytes(fs.statSync(credPath).size));
+  fs.unlinkSync(credPath);
 }
 
 // Promise lock to prevent concurrent token refreshes
