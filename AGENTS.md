@@ -171,7 +171,8 @@ All errors return structured JSON on stderr:
 ## Tips for Agents
 
 - Always pass `--json` or `-q` for structured output.
-- Use `numo commands --json` and `numo schema <command>` for runtime introspection. Both payloads include `schemaVersion` and `cliVersion` at the root — agents that pin behavior should branch on `schemaVersion`.
+- Use `numo commands --json` and `numo schema <command>` for runtime introspection. Both payloads include `schemaVersion` and `cliVersion` at the root — agents that pin behavior should branch on `schemaVersion`. The two are versioned independently; `numo schema` is at `"2"`.
+- In `numo schema`, `required: true` means **you must supply this** — nothing else can. Some positionals are declared optional only so an interactive run can prompt for them; for an agent they are still required, and the schema says so. A positional with `alternatives` (e.g. `["--stdin"]`) is genuinely optional: supply it, or use what `alternatives` names.
 - Natural language dates work for both `--date` and `--due`: `"tomorrow"`, `"next monday"`, `"in 3 days"`.
 - Task IDs are stable; store them for later operations.
 - `numo tasks create` defaults to **private** in every mode (see "JSON Mode" above) and inserts new tasks at the top of the list. Pass `--public` to make a task public.

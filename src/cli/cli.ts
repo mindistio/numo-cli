@@ -15,6 +15,7 @@ import { collectCommands, formatCommandMap } from './lib/command-map';
 import { getAgentGuide } from './lib/guide';
 import { isQuietMode } from './lib/quiet';
 import { ExitCode, Errors } from './lib/errors';
+import { buildCommandSchema, SCHEMA_VERSION } from './lib/schema';
 
 declare const __CLI_VERSION__: string;
 const CLI_VERSION = typeof __CLI_VERSION__ !== 'undefined' ? __CLI_VERSION__ : '0.0.0-dev';
@@ -192,41 +193,6 @@ Examples:
     }
   });
 
-// Allowed values for options that accept a closed set — surfaced so agents don't guess.
-const OPTION_ENUMS: Record<string, ReadonlyArray<string | number>> = {
-  '--repeat': ['daily', 'weekly', 'monthly', 'none'],
-  '--difficulty': [0, 1, 2, 3],
-};
-
-function buildCommandSchema(cmd: Command, fullName: string): Record<string, unknown> {
-  return {
-    name: fullName,
-    description: cmd.description(),
-    arguments: (cmd as any).registeredArguments?.map((a: any) => ({
-      name: a.name(),
-      required: a.required,
-      variadic: a.variadic,
-      description: a.description,
-    })) ?? [],
-    options: cmd.options
-      .filter((o: any) => !['--json', '-q, --quiet'].includes(o.flags))
-      .map((o: any) => {
-        const takesValue = o.required || o.optional;
-        const repeatable = Array.isArray(o.defaultValue);
-        const opt: Record<string, unknown> = {
-          flags: o.flags,
-          description: o.description,
-          type: takesValue ? (repeatable ? 'string[]' : 'string') : 'boolean',
-          required: o.required,
-          default: o.defaultValue,
-        };
-        if (repeatable) opt.repeatable = true;
-        if (OPTION_ENUMS[o.long]) opt.enum = OPTION_ENUMS[o.long];
-        return opt;
-      }),
-  };
-}
-
 program
   .command('schema [command]')
   .description('Print JSON schema for a command (for AI agents)')
@@ -241,7 +207,7 @@ program
         }
       }
       walk(program, '');
-      console.log(JSON.stringify({ schemaVersion: '1', cliVersion: CLI_VERSION, commands: schemas }, null, 2));
+      console.log(JSON.stringify({ schemaVersion: SCHEMA_VERSION, cliVersion: CLI_VERSION, commands: schemas }, null, 2));
       return;
     }
 
@@ -256,7 +222,7 @@ program
       }
       cmd = sub;
     }
-    console.log(JSON.stringify({ schemaVersion: '1', cliVersion: CLI_VERSION, ...buildCommandSchema(cmd, cmdPath) }, null, 2));
+    console.log(JSON.stringify({ schemaVersion: SCHEMA_VERSION, cliVersion: CLI_VERSION, ...buildCommandSchema(cmd, cmdPath) }, null, 2));
   });
 
 program
