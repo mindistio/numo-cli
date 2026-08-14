@@ -1,9 +1,13 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { isQuietMode, makeClackSpinner } from '../quiet';
+import * as clack from '@clack/prompts';
 
 vi.mock('../tty', () => ({
   isInteractive: vi.fn().mockReturnValue(true),
   isUnicodeSupported: false,
+}));
+vi.mock('@clack/prompts', () => ({
+  spinner: vi.fn(() => ({ start: vi.fn(), stop: vi.fn() })),
 }));
 
 describe('isQuietMode', () => {
@@ -34,24 +38,31 @@ describe('isQuietMode', () => {
     expect(isQuietMode({})).toBe(false);
   });
 
-  it('returns false when called with no args', () => {
-    expect(isQuietMode()).toBe(false);
-  });
+  // No zero-argument case: every one of the fifteen call sites passes an options object,
+  // and the default parameter makes it identical to the {} case asserted above.
 });
 
 describe('makeClackSpinner', () => {
-  it('returns a no-op spinner in quiet mode', async () => {
-    const s = await makeClackSpinner(true);
-    expect(typeof s.start).toBe('function');
-    expect(typeof s.stop).toBe('function');
-    // No-op calls should not throw
-    expect(() => s.start('hello')).not.toThrow();
-    expect(() => s.stop('done')).not.toThrow();
+  beforeEach(() => {
+    vi.mocked(clack.spinner).mockClear();
   });
 
-  it('returns a real spinner in interactive mode', async () => {
-    const s = await makeClackSpinner(false);
-    expect(typeof s.start).toBe('function');
-    expect(typeof s.stop).toBe('function');
+  // Contract: in quiet mode no spinner is constructed at all. Asserting the returned
+  // object has start/stop cannot hold this — a real spinner has them too, so both a
+  // spinner that writes frames into a --json payload and one that never appears in any
+  // mode satisfied the previous version of these tests. What distinguishes them is
+  // whether @clack was reached, so that is what is asserted.
+  it('constructs no spinner in quiet mode', async () => {
+    const spinner = await makeClackSpinner(true);
+    spinner.start('working');
+    spinner.stop('done');
+
+    expect(clack.spinner).not.toHaveBeenCalled();
+  });
+
+  it('constructs one in interactive mode', async () => {
+    await makeClackSpinner(false);
+
+    expect(clack.spinner).toHaveBeenCalled();
   });
 });

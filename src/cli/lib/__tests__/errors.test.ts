@@ -42,12 +42,8 @@ describe('classifyError — status table', () => {
 describe('classifyError — structured body over status', () => {
   // Contract: when the server explains the refusal, the user reads that explanation.
   // A generic "Access denied" in its place is the defect this classifier exists to fix.
-  it('shows the server message instead of the generic status message', () => {
-    const e = classifyError(
-      httpError(403, { error: { kind: 'AUTH_FORBIDDEN', message: 'Verify your email to create tasks' } }),
-    );
-    expect(e.message).toBe('Verify your email to create tasks');
-  });
+  // The body-message-wins rule is asserted by the three cases below, each of which also
+  // pins what happens to the hint, the suggestion and the exit code alongside it.
 
   it('keeps the status hint when the server said nothing', () => {
     expect(classifyError(httpError(403)).options.hint).toBeTruthy();

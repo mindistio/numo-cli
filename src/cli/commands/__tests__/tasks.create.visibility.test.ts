@@ -53,10 +53,11 @@ describe('numo tasks create — visibility', () => {
       expect(sent()).toMatchObject({ isPublic: true });
     });
 
-    // Invariant: the field is never merely absent. Omitting it defers the decision to
-    // whatever the server happens to default to, which is not a promise this CLI can
-    // make on its own — so every shape of create has to state it.
-    it('states the visibility explicitly on every create, whatever else is passed', async () => {
+    // Invariant: every shape of create states the visibility, and states it private.
+    // Asserting only that the field is a boolean was satisfied by `true` — a build where
+    // `--backlog` created public tasks passed this file, which is the guarantee itself
+    // going unheld. The value is the rule; the presence is the weaker half of it.
+    it('sends isPublic: false on every create shape that does not ask for public', async () => {
       const variants = [
         ['a', '--json'],
         ['b', '--backlog', '--json'],
@@ -69,7 +70,7 @@ describe('numo tasks create — visibility', () => {
 
       expect(mockCreate.mock.calls.length).toBe(variants.length);
       for (const [body] of mockCreate.mock.calls) {
-        expect(typeof (body as Record<string, unknown>).isPublic).toBe('boolean');
+        expect(body).toMatchObject({ isPublic: false });
       }
     });
 

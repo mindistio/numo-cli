@@ -2,9 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { buildSubtasks } from '../task-subtasks';
 
 describe('buildSubtasks', () => {
-  it('returns [] for an empty list', () => {
-    expect(buildSubtasks([])).toEqual([]);
-  });
+  // No empty-list case: [].map().filter().map() is a language guarantee with no branch
+  // of ours in it, and every caller is length-guarded before it gets here.
 
   it('builds {id, text, completed:false} objects', () => {
     const subs = buildSubtasks(['Buy milk', 'Pay rent']);

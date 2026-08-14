@@ -48,9 +48,9 @@ describe('selectFields', () => {
     });
   });
 
-  it('trims a bare array of records', () => {
-    expect(selectFields([TASK], 'id')).toEqual([{ id: 't1' }]);
-  });
+  // No bare-array case: every response type in types/api.ts is an object envelope, and
+  // all four runners hand this function that envelope, so the top-level array branch has
+  // no caller to reach it.
 
   // toStrictEqual, not toEqual: a key present but undefined compares equal under toEqual
   // and then vanishes again in JSON.stringify, so the looser assertion could not tell an

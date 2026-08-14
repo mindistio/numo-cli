@@ -7,8 +7,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 process.env.NUMO_API_URL = 'https://evilnumo.ai';
 delete process.env.NUMO_ALLOW_CUSTOM_HOST;
 
+// Mirrors the real module: the client's `del` reaches for `http.delete`, so a mock
+// spelling it `del` would silently provide nothing for the verb under test.
 vi.mock('../http', () => ({
-  http: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), del: vi.fn() },
+  http: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() },
 }));
 vi.mock('../../auth/credentials', () => ({ getIdToken: vi.fn(async () => 'id-token') }));
 
@@ -24,21 +26,23 @@ describe('api client host guard', () => {
     vi.clearAllMocks();
   });
 
-  it('refuses an untrusted NUMO_API_URL before requesting anything or reading the token', async () => {
+  // Every verb, not the first one. The guard lives in the shared header builder today,
+  // but that is an implementation detail one refactor away — a verb that stops going
+  // through it sends a bearer token to whatever host was configured, and a test covering
+  // only get and post stays green while it happens.
+  const EVERY_VERB: [string, (api: any) => Promise<unknown>][] = [
+    ['get', (api) => api.get('/api/tasks')],
+    ['post', (api) => api.post('/api/tasks', { text: 'x' })],
+    ['patch', (api) => api.patch('/api/tasks/t1', { text: 'x' })],
+    ['del', (api) => api.del('/api/tasks/t1')],
+  ];
+
+  it.each(EVERY_VERB)('refuses an untrusted host on %s, sending nothing and reading no token', async (verb, call) => {
     const { api } = await import('../api-client');
 
-    await expect(api.get('/api/tasks')).rejects.toMatchObject({ kind: 'CONFIG_ERROR' });
+    await expect(call(api)).rejects.toMatchObject({ kind: 'CONFIG_ERROR' });
 
-    expect(http.get).not.toHaveBeenCalled();
-    expect(getIdToken).not.toHaveBeenCalled();
-  });
-
-  it('applies to writes as well as reads', async () => {
-    const { api } = await import('../api-client');
-
-    await expect(api.post('/api/tasks', { text: 'x' })).rejects.toMatchObject({ kind: 'CONFIG_ERROR' });
-
-    expect(http.post).not.toHaveBeenCalled();
+    expect(http[verb === 'del' ? 'delete' : (verb as 'get' | 'post' | 'patch')]).not.toHaveBeenCalled();
     expect(getIdToken).not.toHaveBeenCalled();
   });
 });

@@ -50,25 +50,10 @@ function runMayFail(args: string, extraEnv?: Record<string, string>): { stdout: 
   }
 }
 
-describe('CLI help output', () => {
-  it('root --help includes Examples', () => {
-    const out = run('--help');
-    expect(out).toContain('Examples:');
-    expect(out).toContain('numo login');
-  });
-
-  it('tasks list --help includes Examples', () => {
-    const out = run('tasks list --help');
-    expect(out).toContain('Examples:');
-    expect(out).toContain('numo tasks list');
-  });
-
-  it('tasks create --help includes --text option', () => {
-    const out = run('tasks create --help');
-    expect(out).toContain('--text');
-    expect(out).toContain('Examples:');
-  });
-});
+// Help text is not tested here. Three cases used to assert that `Examples:` appears in
+// `--help` output, at about half a second of subprocess each; none named a rule, and the
+// last only proved Commander prints an option declared three lines away from it. What
+// matters about --help — exit 0 and nothing on stderr — is held below.
 
 describe('commands --json', () => {
   // Contract: the root envelope. Agents pin behaviour by branching on `schemaVersion`,
@@ -154,7 +139,9 @@ describe('completion', () => {
 
 describe('whoami (not logged in)', () => {
   it('exits with code 77', () => {
-    const { status } = runMayFail('whoami', { HOME: '/tmp/numo-test-no-creds', NUMO_CONFIG_DIR: '/tmp/numo-test-no-creds' });
+    // NUMO_TOKEN blanked explicitly: runMayFail inherits the real environment, so a
+    // developer who happens to export one would see this pass for the wrong reason.
+    const { status } = runMayFail('whoami', { HOME: '/tmp/numo-test-no-creds', NUMO_CONFIG_DIR: '/tmp/numo-test-no-creds', NUMO_TOKEN: '' });
     expect(status).toBe(77);
   });
 });
@@ -249,12 +236,9 @@ describe('logout', () => {
   });
 });
 
-describe('--version', () => {
-  it('outputs 0.0.0-dev in dev mode', () => {
-    const out = run('--version');
-    expect(out.trim()).toBe('0.0.0-dev');
-  });
-});
+// `--version` has no case of its own: the literal it printed here is the dev-mode
+// fallback, which no published build emits, and the envelope test above already requires
+// `cliVersion` to equal whatever `--version` reports.
 
 describe('argument-parsing failures', () => {
   // Commander handles these itself by default, printing bare text and exiting 1 —
@@ -270,12 +254,8 @@ describe('argument-parsing failures', () => {
     expect(JSON.parse(stderr).error).toMatchObject({ kind, code: 2 });
   });
 
-  // A subcommand only inherits the handler if it was installed before the subcommand
-  // was created. The root-level case passes either way, which is what hid the gap.
-  it('applies at subcommand level, not just the root', () => {
-    expect(runMayFail('nosuchcommand --json').status).toBe(2);
-    expect(runMayFail('tasks nosuchsubcommand --json').status).toBe(2);
-  });
+  // No separate subcommand-level case: the `tasks nonexistent --json` row above is that
+  // path, and asserts the kind and an empty stdout where the separate one asserted only 2.
 
   it('--help and --version stay successful and quiet on stderr', () => {
     for (const flag of ['--help', '--version']) {

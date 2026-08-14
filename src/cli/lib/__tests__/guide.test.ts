@@ -14,17 +14,12 @@ describe('getAgentGuide', () => {
   });
 
   // Residual, recorded rather than implied away: under vitest there is no esbuild
-  // `__AGENTS_MD__` define, so this exercises the dev fallback that reads from disk.
-  // The published binary takes the other branch, and whether the build inlined the
+  // `__AGENTS_MD__` define, so the test above exercises the dev fallback that reads from
+  // disk. The published binary takes the other branch, and whether the build inlined the
   // current file is a question only a built artifact can answer. `npm run build` +
   // `node dist/cli.cjs guide | diff - AGENTS.md` is that check, and it is not run here.
-  it('falls back to a pointer rather than a lie when the file is unreachable', () => {
-    const cwd = process.cwd();
-    try {
-      process.chdir('/');
-      expect(getAgentGuide()).toContain('github.com/mindistio/numo-cli');
-    } finally {
-      process.chdir(cwd);
-    }
-  });
+  //
+  // The unreachable-file branch has no case: the shipped binary always has the define, so
+  // no published caller can reach it, and provoking it here meant chdir('/') — worker-wide
+  // state that breaks outright under a threaded pool.
 });

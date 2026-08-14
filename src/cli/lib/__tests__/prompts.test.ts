@@ -59,15 +59,9 @@ describe('prompts without a terminal', () => {
     expect(clack.confirm).not.toHaveBeenCalled();
   });
 
-  it.each(EVERY_PROMPT)('%s opens nothing on the terminal', async (_name, call) => {
-    await call().catch(() => undefined);
-
-    expect(clack.text).not.toHaveBeenCalled();
-    expect(clack.password).not.toHaveBeenCalled();
-    expect(clack.select).not.toHaveBeenCalled();
-    expect(clack.confirm).not.toHaveBeenCalled();
-    expect(clack.multiselect).not.toHaveBeenCalled();
-  });
+  // Nothing separately asserts that no prompt was opened: the guard throws before the
+  // dynamic import, so any prompt that reached @clack would resolve a value and fail the
+  // refusal above. The confirm case, which does not throw, asserts it directly below.
 
   // Liveness: with a terminal the prompts do open, or the refusals above would be
   // satisfied by prompts that never work at all.

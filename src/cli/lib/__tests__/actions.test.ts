@@ -50,7 +50,9 @@ describe('action runners', () => {
 
   // Contract: JSON mode outranks the interactive renderer. An agent must never receive
   // the pretty output just because a command happens to define one.
-  it.each(RUNNERS)('%s ignores onInteractive in JSON mode', async (_name, _call) => {
+  // One case, not a table: the body below already exercises all four runners, so a
+  // parametrised version ran the identical body four times over an unused parameter.
+  it('ignores onInteractive in JSON mode, in every runner', async () => {
     const onInteractive = vi.fn();
     const payload = { task: TASK, tasks: [TASK] };
     const fn = () => Promise.resolve(payload);

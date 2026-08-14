@@ -42,11 +42,17 @@ describe('focusCommands', () => {
 });
 
 describe('formatCommandMap', () => {
+  // Contract: the map a user reads after logging in is grouped, one heading per first
+  // token. The heading was in the name of this test but in none of its assertions —
+  // deleting the grouping block entirely left it green. The `not.toContain('numo add')`
+  // line went with it: no `add` command has ever been registered, in the fixture or the
+  // real program, so nothing could have made it fail.
   it('groups by first token and renders one line per command', () => {
     const out = formatCommandMap(collectCommands(buildProgram()));
+
+    expect(out).toContain('Tasks:');
     expect(out).toContain('numo tasks list');
     expect(out).toContain('numo tasks create');
-    // stale legacy command must never appear
-    expect(out).not.toContain('numo add');
+    expect(out.indexOf('Tasks:')).toBeLessThan(out.indexOf('numo tasks list'));
   });
 });
