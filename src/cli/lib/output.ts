@@ -58,6 +58,12 @@ export function selectFields(data: unknown, fields: string | boolean | undefined
     for (const [key, value] of Object.entries(obj)) {
       if (Array.isArray(value) && value.length > 0 && typeof value[0] === 'object') {
         result[key] = value.map((item: any) => pickFields(item, fieldList));
+      } else if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+        // The single-record envelopes ({ task }, { post }) trim the same way the list
+        // ones do. Leaving them whole meant `--json id,text` on a get or a create still
+        // returned every field, private note included, while the same flag on a list
+        // trimmed correctly.
+        result[key] = pickFields(value as Record<string, unknown>, fieldList);
       } else {
         result[key] = value;
       }

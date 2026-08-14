@@ -47,9 +47,39 @@ describe('parseHumanDate', () => {
     expect(parseHumanDate('noon tomorrow')).toBe('2026-08-15 12:00');
   });
 
-  it('passes ISO-shaped input through untouched', () => {
+  it('keeps ISO-shaped input in the shape it is already in', () => {
     expect(parseHumanDate('2026-03-27')).toBe('2026-03-27');
     expect(parseHumanDate('2026-03-27 14:30')).toBe('2026-03-27 14:30');
+  });
+
+  // Contract: the output is 'YYYY-MM-DD' or 'YYYY-MM-DD HH:mm' whatever the input looked
+  // like. A T or trailing seconds used to survive as far as the request, which then failed
+  // on a value the caller had written correctly for a different format.
+  it('normalises the ISO variants an agent is likely to compute', () => {
+    expect(parseHumanDate('2026-03-27T14:30')).toBe('2026-03-27 14:30');
+    expect(parseHumanDate('2026-03-27 14:30:59')).toBe('2026-03-27 14:30');
+  });
+
+  // Contract: an instant carrying its own offset is converted, not stripped. Keeping the
+  // digits would move the task by the whole offset — 14:30Z is 10:30 here.
+  it('converts an explicit offset to the local clock', () => {
+    expect(parseHumanDate('2026-03-27T14:30:00Z')).toBe('2026-03-27 10:30');
+    expect(parseHumanDate('2026-03-27T14:30:00+00:00')).toBe('2026-03-27 10:30');
+    // Same instant named from the local offset: the clock is unchanged, so nothing moves.
+    expect(parseHumanDate('2026-03-27T14:30:00-04:00')).toBe('2026-03-27 14:30');
+  });
+
+  // Contract: an impossible date is refused here, where the message can name the input,
+  // rather than forwarded for the request to fail on.
+  it('refuses a date the calendar does not have', () => {
+    expect(parseHumanDate('2026-13-45')).toBeNull();
+    expect(parseHumanDate('2026-02-30')).toBeNull();
+    expect(parseHumanDate('2026-03-27 25:00')).toBeNull();
+    // Liveness: the values just inside the boundary stay acceptable, or a rule that
+    // rejects everything ISO-shaped would pass the three above. 2028 is a leap year, so
+    // the 29th is a real day and a check that just counted to 28 would fail here.
+    expect(parseHumanDate('2028-02-29')).toBe('2028-02-29');
+    expect(parseHumanDate('2026-03-27 23:59')).toBe('2026-03-27 23:59');
   });
 
   it('returns null rather than a guess for empty or unparseable input', () => {
