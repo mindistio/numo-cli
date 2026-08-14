@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../tty', () => ({ isInteractive: vi.fn(() => true), isUnicodeSupported: false }));
 
-import { selectFields, printTable, printJson, printRecord, outputResult, outputError } from '../output';
+import { selectFields, selectRecordFields, printTable, printJson, printRecord, outputResult, outputError } from '../output';
 import { isInteractive } from '../tty';
 import { CliError, ErrorKind, ExitCode } from '../errors';
 
@@ -32,7 +32,7 @@ describe('selectFields', () => {
   // Contract: `--json <fields>` trims the records inside the envelope and keeps the
   // envelope's own scalars, which are what an agent pages and counts with.
   it('trims records in a list envelope and keeps the envelope scalars', () => {
-    expect(selectFields({ tasks: [TASK], count: 1, nextCursor: null }, 'id,text')).toEqual({
+    expect(selectFields({ tasks: [TASK], count: 1, nextCursor: null }, 'id,text', 'tasks')).toEqual({
       tasks: [{ id: 't1', text: 'Buy milk' }],
       count: 1,
       nextCursor: null,
@@ -42,26 +42,68 @@ describe('selectFields', () => {
   // Contract: the same flag trims a single-record envelope. It used to return every
   // field here — a caller asking for two of them still received the private note.
   it('trims a single-record envelope the same way', () => {
-    expect(selectFields({ task: TASK, karma: 5 }, 'id,text')).toEqual({
+    expect(selectFields({ task: TASK, karma: 5 }, 'id,text', 'task')).toEqual({
       task: { id: 't1', text: 'Buy milk' },
       karma: 5,
     });
   });
 
-  // No bare-array case: every response type in types/api.ts is an object envelope, and
-  // all four runners hand this function that envelope, so the top-level array branch has
-  // no caller to reach it.
+  // Contract: ONLY the named key is trimmed, even when a second record sits beside it.
+  //
+  // This is the real `tasks complete` shape (numo-api services/tasks.ts): `task` is the
+  // record the command acted on, `taskHistory` is the completion record beside it — a
+  // second full task from serializeTask, not a wrapper around one. Trimming by JS type
+  // instead of by name hit both, and nothing could ask the second one back, because
+  // `--json taskHistory` looked for a key of that name *inside* it.
+  //
+  // The key must be present for this to test anything. An earlier version of this case
+  // passed the envelope with no key at all, took the "nothing to trim" early return, and
+  // survived a mutation that restored the overreach verbatim.
+  it('trims only the named key when a peer record sits beside it', () => {
+    const history = { id: 'h1', text: 'Buy milk', note: 'private', date: '2026-08-14' };
+
+    expect(
+      selectFields({ completed: true, task: TASK, taskHistory: history, karma: 3 }, 'id,text', 'task'),
+    ).toStrictEqual({
+      completed: true,
+      task: { id: 't1', text: 'Buy milk' },
+      taskHistory: history,
+      karma: 3,
+    });
+  });
+
+  // The other direction: an envelope with no record key at all — `tasks delete`, whose
+  // scalars are the whole answer — is passed through untouched.
+  it('leaves an envelope alone when no record key is named', () => {
+    const failed = [{ path: 'a/b', error: 'nope' }];
+    expect(
+      selectFields({ taskText: 'Buy milk', archived: true, failed }, 'id,text'),
+    ).toStrictEqual({ taskText: 'Buy milk', archived: true, failed });
+  });
+
+  // Contract: a payload that IS the record is trimmed as one. `tasks get` and `posts get`
+  // return an ApiTask / ApiPost directly, so reading them as an envelope left every
+  // top-level scalar in place — `--json id,text` returned the whole task, note included,
+  // which is the leak the envelope branch was written to close and did not.
+  it('trims a bare record, the shape a get returns', () => {
+    expect(selectRecordFields(TASK, 'id,text')).toStrictEqual({ id: 't1', text: 'Buy milk' });
+  });
+
+  // No bare-array case: every response type in types/api.ts is an object envelope or a
+  // single record, so the top-level array branch has no caller to reach it.
 
   // toStrictEqual, not toEqual: a key present but undefined compares equal under toEqual
   // and then vanishes again in JSON.stringify, so the looser assertion could not tell an
   // omitted field from one carried through as undefined.
   it('tolerates spaces in the field list and omits fields the record does not have', () => {
-    expect(selectFields({ task: TASK }, 'id, nope')).toStrictEqual({ task: { id: 't1' } });
+    expect(selectFields({ task: TASK }, 'id, nope', 'task')).toStrictEqual({ task: { id: 't1' } });
+    expect(selectRecordFields(TASK, 'id, nope')).toStrictEqual({ id: 't1' });
   });
 
   it('leaves a value that is not a record alone', () => {
-    expect(selectFields('plain', 'id')).toBe('plain');
-    expect(selectFields({ ok: true, count: 0 }, 'id')).toEqual({ ok: true, count: 0 });
+    expect(selectFields('plain', 'id', 'task')).toBe('plain');
+    expect(selectRecordFields('plain', 'id')).toBe('plain');
+    expect(selectFields({ ok: true, count: 0 }, 'id', 'task')).toEqual({ ok: true, count: 0 });
   });
 });
 

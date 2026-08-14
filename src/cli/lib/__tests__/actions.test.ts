@@ -17,6 +17,9 @@ import { printJson, printTable, outputResult, outputError } from '../output';
 import { withSpinner } from '../spinner';
 
 const TASK = { id: 't1', text: 'Buy milk', note: 'private' };
+// The completion record numo-api returns beside `task` — a second full task, not a
+// wrapper. It must survive a field list that names none of its fields.
+const HISTORY = { id: 'h1', text: 'Buy milk', note: 'private', date: '2026-08-14' };
 
 const RUNNERS = [
   ['runGet', (global: any, fn: any) => runGet({ global, fn })],
@@ -67,18 +70,54 @@ describe('action runners', () => {
     expect(printJson).toHaveBeenCalledTimes(4);
   });
 
-  // Contract: `--json <fields>` applies wherever the payload leaves. Applying it in some
-  // runners and not others is worse than not having it: the caller cannot tell which.
-  it('applies the field list in every runner', async () => {
-    const global = { json: 'id,text' };
-    const fn = () => Promise.resolve({ task: TASK, tasks: [TASK] });
+  // Contract: `--json <fields>` trims the record the command is about, and touches
+  // nothing else in the envelope.
+  //
+  // Each row carries the payload its runner actually receives. The previous version of
+  // this test fed all four the same invented `{task, tasks}` — a shape no command
+  // returns — and so proved nothing about any of them. It is why `tasks get` shipped
+  // ignoring the field list entirely: getTask returns a bare ApiTask, not `{task}`, and
+  // the envelope logic left every top-level scalar in place, private note included.
+  //
+  // The last two rows are the other direction, and the four above cannot stand without
+  // them: every one of those envelopes holds exactly one object, so all four would pass
+  // just as well on a rule that trims every nested object it finds.
+  //
+  // The complete row is the case that separates the two rules. numo-api answers it with
+  // `{completed, task, taskHistory, karma, checksInRow, taskText}` — two full records
+  // side by side, `taskHistory` being a second serializeTask result rather than a
+  // wrapper around one. Trimming by type hit both and left no way to ask the second one
+  // back, since `--json taskHistory` looked for a key of that name inside it.
+  it.each([
+    ['runGet — payload IS the record',
+      (g: any, f: any) => runGet({ global: g, fn: f }),
+      { id: 't1', text: 'Buy milk', note: 'private' },
+      { id: 't1', text: 'Buy milk' }],
+    ['runList — trims the rows, keeps the paging scalars',
+      (g: any, f: any) => runList({ global: g, fn: f, dataKey: 'tasks', columns: ['id'] }),
+      { tasks: [TASK], count: 1, nextCursor: null },
+      { tasks: [{ id: 't1', text: 'Buy milk' }], count: 1, nextCursor: null }],
+    ['runCreate — trims the created record',
+      (g: any, f: any) => runCreate({ global: g, fn: f, dataKey: 'task' }),
+      { task: TASK },
+      { task: { id: 't1', text: 'Buy milk' } }],
+    ['runWrite — trims the updated record',
+      (g: any, f: any) => runWrite({ global: g, fn: f, dataKey: 'task' }),
+      { task: TASK },
+      { task: { id: 't1', text: 'Buy milk' } }],
+    ['runWrite on complete — trims the acted-on record, leaves the peer record whole',
+      (g: any, f: any) => runWrite({ global: g, fn: f, dataKey: 'task' }),
+      { completed: true, task: TASK, taskHistory: HISTORY, karma: 3 },
+      { completed: true, task: { id: 't1', text: 'Buy milk' }, taskHistory: HISTORY, karma: 3 }],
+    ['runWrite without a record key — the envelope is the answer, untouched',
+      (g: any, f: any) => runWrite({ global: g, fn: f }),
+      { taskText: 'Buy milk', archived: true },
+      { taskText: 'Buy milk', archived: true }],
+  ])('%s', async (_name, call, payload, expected) => {
+    await call({ json: 'id,text' }, () => Promise.resolve(payload));
 
-    for (const [, call] of RUNNERS) await call(global, fn);
-
-    expect(vi.mocked(printJson).mock.calls.length).toBe(RUNNERS.length);
-    for (const [payload] of vi.mocked(printJson).mock.calls) {
-      expect(payload).toEqual({ task: { id: 't1', text: 'Buy milk' }, tasks: [{ id: 't1', text: 'Buy milk' }] });
-    }
+    expect(vi.mocked(printJson)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(printJson).mock.calls[0][0]).toStrictEqual(expected);
   });
 
   // Contract: no spinner writes while a machine is reading. The spinner goes to stdout,
