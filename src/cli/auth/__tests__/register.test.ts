@@ -118,16 +118,27 @@ describe('numo register', () => {
     expect(output().error).toMatchObject({ kind: 'CONFLICT', code: ExitCode.CONFLICT });
   });
 
-  // The CLI never observes whether mail was sent, so it must not say that it was.
-  // Asserting a send it cannot see is the same class of untruth this release removes.
-  it('does not claim a reset email was sent', async () => {
+  // Contract: the refusal names a recovery the reader can reach, and points at no
+  // inbox. numo-api mails nothing on this path (services/registration.ts — an
+  // unrequested reset link in a stranger's inbox is the habit reset-phishing
+  // depends on), so any wording that leaves the reader watching for mail sends
+  // them to wait for something that is never coming.
+  //
+  // The previous version of this test asserted the exact hedge then in use
+  // ("may have been sent"), which pinned the wording rather than the rule and went
+  // red the moment the rule was satisfied more strongly.
+  //
+  // Liveness: the positive half proves the assertion reads a real hint, so the
+  // refusal below is a refusal and not an empty string matching everything.
+  it('points at a reachable reset instead of an inbox', async () => {
     vi.mocked(http.post).mockResolvedValue({ data: { status: 'ok' } } as never);
     vi.mocked(postLogin).mockRejectedValue(authRefusal());
 
     await run();
     const { message, hint } = output().error;
-    expect(`${message} ${hint}`).toMatch(/may have been sent/i);
-    expect(`${message} ${hint}`).not.toMatch(/we (have )?sent|email sent/i);
+    const said = `${message} ${hint}`;
+    expect(said).toMatch(/numo\.ai/);
+    expect(said).not.toMatch(/sent|inbox|spam|check your (mail|email)/i);
   });
 
   it('does not store credentials when the address was taken', async () => {

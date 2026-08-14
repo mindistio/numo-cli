@@ -74,9 +74,12 @@ export async function register(
         ExitCode.CONFLICT,
         {
           suggestion: 'numo login',
-          // Not "we sent you an email" — the CLI cannot see whether one went out,
-          // and claiming it would be the same untruth this release is removing.
-          hint: 'If the address is yours, a password-reset email may have been sent to it. Check your inbox and spam.',
+          // Names a place the reader can actually go. numo-api sends nothing on
+          // this path — registering an address you cannot sign into must not drop
+          // an unrequested reset link in someone else's inbox — and the CLI has no
+          // reset command to offer instead, so the web flow is the whole answer.
+          // Pointing at an inbox would send them to wait for mail never coming.
+          hint: 'Forgot the password? Reset it at https://numo.ai — the CLI has no reset command yet.',
           cause: err,
         },
       );
