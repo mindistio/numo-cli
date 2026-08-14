@@ -29,11 +29,36 @@ describe('parseHumanDate', () => {
     expect(parseHumanDate('next monday 20:30')).toBe('2026-08-17 20:30');
   });
 
-  // Contract: a time appears in the output only when the text named one. Otherwise the
-  // due date silently carries the moment the command happened to run.
-  it('returns the date alone when no time was named', () => {
-    expect(parseHumanDate('tomorrow')).toBe('2026-08-15');
-    expect(parseHumanDate('in 3 days')).toBe('2026-08-17');
+  // Contract: a time appears in the output exactly when the text named one — and a
+  // casual band ("tonight", "tomorrow morning") names one. chrono files a band's hour
+  // under *implied*, the same bucket as the reference clock it copies into "tomorrow",
+  // so a rule keeping only `isCertain('hour')` threw both away and `--due tonight`
+  // booked 00:00 — 22 hours before the user asked, silently. The server cannot catch
+  // it either: normalizeDueDate pads a bare date to 00:00 as well.
+  //
+  // Both directions live in one table on purpose. Split apart, the "keeps the time"
+  // half would still pass on a rule that kept every hour chrono hands back, and the
+  // "date alone" half would still pass on the rule that lost tonight. Neither half is
+  // a claim about the band list; together they are.
+  //
+  // "next monday" is not filler: chrono defaults it to 12:00 rather than to the
+  // reference clock, so a rule that asked "is the hour just the clock we passed in?"
+  // would keep midday for it and call that a named time.
+  it.each([
+    // the text named a band → the time survives
+    ['tonight', '2026-08-14 22:00'],
+    ['this evening', '2026-08-14 20:00'],
+    ['this afternoon', '2026-08-14 15:00'],
+    ['tomorrow morning', '2026-08-15 06:00'],
+    ['tomorrow evening', '2026-08-15 20:00'],
+    ['saturday night', '2026-08-15 20:00'],
+    // the text named no time → date alone, though chrono still hands back an hour
+    ['tomorrow', '2026-08-15'],
+    ['in 3 days', '2026-08-17'],
+    ['next monday', '2026-08-17'],
+    ['next week', '2026-08-21'],
+  ])('%s → %s', (input, expected) => {
+    expect(parseHumanDate(input)).toBe(expected);
   });
 
   // These two differ only by the number in them. Deciding "was a time mentioned" by

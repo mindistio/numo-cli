@@ -3,6 +3,22 @@ import { localDateOnly } from './task-dates';
 
 const PLAIN_DATE = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?(?::\d{2})?(?:\.\d+)?$/;
 
+/**
+ * The casual time bands chrono understands. It files their hour under *implied*
+ * — the same bucket it uses for the reference clock it copies into "tomorrow" —
+ * so `isCertain('hour')` cannot tell "the text named a time" from "the text named
+ * no time", and treating both as no-time booked `--due tonight` at 00:00.
+ *
+ * A word list, not a test on the value. Measured against chrono 2.9 at 08:37:
+ * "tomorrow" and "in 3 days" come back carrying the reference clock, but
+ * "next monday" and "December 12" come back at 12:00 — so "is the hour just the
+ * reference clock?" keeps midday for those two, and any rule reading the number
+ * has to hard-code chrono's own no-information default. Naming the five words is
+ * shorter and says what it means. "midnight" and "noon" need no entry: chrono
+ * marks those certain.
+ */
+const CASUAL_TIME_BAND = /\b(tonight|morning|afternoon|evening|night)\b/i;
+
 function hhmm(d: Date): string {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
@@ -48,7 +64,9 @@ export function parseHumanDate(input: string): string | null {
   const date = localDateOnly(when);
   // Whether the text named a time is chrono's answer to give, not something the digits
   // can be read for: "in 12 days" and "December 12" both carry a 12 that is not a clock.
-  if (!result.start.isCertain('hour')) return date;
+  // Certain covers an explicit clock ("14:30", "3pm", "noon"); the band list covers the
+  // times chrono knows but only implies.
+  if (!result.start.isCertain('hour') && !CASUAL_TIME_BAND.test(trimmed)) return date;
   return `${date} ${hhmm(when)}`;
 }
 
