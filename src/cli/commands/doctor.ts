@@ -95,15 +95,28 @@ async function runChecks(): Promise<CheckResult[]> {
     checks.push(await checkTls(apiUrl.hostname));
   }
 
+  // The gate is "can this shell authenticate", not "is there a credentials file".
+  // getIdToken() reads NUMO_TOKEN first (auth/credentials.ts), so an agent or CI runner
+  // with the env var and no file — the setup AGENTS.md prescribes — makes perfectly good
+  // API calls while doctor reported a broken install, failed the whole health check, and
+  // skipped the one report this release added: which verification gate is closed.
   const creds = loadCredentials();
+  const envToken = !!process.env.NUMO_TOKEN;
+  const authed = envToken || !!creds;
   checks.push({
     name: 'credentials',
-    status: creds ? 'ok' : 'fail',
-    message: creds ? `Logged in as ${creds.email}` : 'Not logged in',
-    fix: creds ? undefined : 'numo login',
+    status: authed ? 'ok' : 'fail',
+    // Named, not just passed: "Logged in as <email>" for a token with no file would be
+    // a claim doctor cannot support — it never decodes the token.
+    message: envToken
+      ? 'Using NUMO_TOKEN'
+      : creds
+        ? `Logged in as ${creds.email}`
+        : 'Not logged in',
+    fix: authed ? undefined : 'numo login',
   });
 
-  if (creds) {
+  if (authed) {
     try {
       await getIdToken();
       checks.push({ name: 'token', status: 'ok', message: 'Token valid / refreshed' });
@@ -116,7 +129,7 @@ async function runChecks(): Promise<CheckResult[]> {
       });
     }
   } else {
-    checks.push({ name: 'token', status: 'fail', message: 'Skipped (no credentials)' });
+    checks.push({ name: 'token', status: 'fail', message: 'Skipped (no credentials and no NUMO_TOKEN)' });
   }
 
   try {
@@ -136,7 +149,7 @@ async function runChecks(): Promise<CheckResult[]> {
     });
   }
 
-  if (creds) {
+  if (authed) {
     try {
       const token = await getIdToken();
       const resp = await fetch(`${API_BASE}/api/tasks?backlog=true`, {

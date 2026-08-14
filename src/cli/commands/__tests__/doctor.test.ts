@@ -57,6 +57,10 @@ beforeEach(() => {
   vi.mocked(getMe).mockResolvedValue({ uid: 'u1', email: 'a@b.com', emailVerified: true, canCreateTasks: true });
   fetchMock = vi.fn(async () => ({ ok: true, status: 200 }) as unknown as Response);
   vi.stubGlobal('fetch', fetchMock);
+  // Isolation: NUMO_TOKEN is now part of what doctor gates on, and it is an ordinary
+  // env var a developer may well have exported. Left alone, these cases would pass or
+  // fail depending on whose shell ran them.
+  delete process.env.NUMO_TOKEN;
 });
 
 afterEach(() => {
@@ -183,6 +187,47 @@ describe('numo doctor', () => {
     expect(checkNamed(report, 'token')).toMatchObject({ status: 'fail' });
     // Liveness: the message is still there to read, just without the secret in it.
     expect(checkNamed(report, 'token')!.message).toContain('refresh failed');
+  });
+
+  // Contract: doctor gates on whether this shell can authenticate, not on whether a
+  // credentials file exists. getIdToken() reads NUMO_TOKEN first, so an agent or CI
+  // runner with the env var and no file — the setup AGENTS.md prescribes — makes
+  // perfectly good API calls. doctor reported a broken install for it: credentials
+  // "Not logged in", token "Skipped", and both live checks silently absent, including
+  // the verification report this release exists to produce. Then exit 1.
+  it('passes on NUMO_TOKEN alone, and still runs the live checks', async () => {
+    vi.mocked(loadCredentials).mockReturnValue(null);
+    process.env.NUMO_TOKEN = 'an-id-token-from-the-environment';
+
+    const { report, exited } = await doctor();
+
+    expect(checkNamed(report, 'credentials')).toMatchObject({ status: 'ok' });
+    // Named rather than borrowed: doctor never decodes the token, so it cannot say
+    // whose it is, and "Logged in as ..." would be a claim it has no basis for.
+    expect(checkNamed(report, 'credentials')!.message).toBe('Using NUMO_TOKEN');
+    // The point of the fix: these two exist at all on this path.
+    expect(checkNamed(report, 'auth')).toMatchObject({ status: 'ok' });
+    expect(checkNamed(report, 'verification')).toMatchObject({ status: 'ok' });
+    expect(report.ok).toBe(true);
+    // doctor only calls process.exit on failure (`if (!ok) process.exit(1)`), so a
+    // healthy run leaves it untouched and the published exit code is the reported 0.
+    expect(report.exitCode).toBe(0);
+    expect(exited).toBeUndefined();
+  });
+
+  // Liveness for the case above: with neither a file nor the variable, the checks that
+  // need a token really are skipped and the run really does fail. Otherwise the rule
+  // reads as "always report ok", which would be a worse doctor than the broken one.
+  it('still fails, and skips the live checks, with no credentials and no NUMO_TOKEN', async () => {
+    vi.mocked(loadCredentials).mockReturnValue(null);
+
+    const { report } = await doctor();
+
+    expect(checkNamed(report, 'credentials')).toMatchObject({ status: 'fail' });
+    expect(checkNamed(report, 'auth')).toBeUndefined();
+    expect(checkNamed(report, 'verification')).toBeUndefined();
+    expect(checkNamed(report, 'token')!.message).toMatch(/NUMO_TOKEN/);
+    expect(report.ok).toBe(false);
   });
 
   it('reports the exit code it is about to use, so a JSON caller need not guess', async () => {
