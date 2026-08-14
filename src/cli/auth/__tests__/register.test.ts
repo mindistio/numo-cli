@@ -23,6 +23,14 @@ const authResult = {
 const verifiedToken = () =>
   `h.${Buffer.from(JSON.stringify({ email_verified: true })).toString('base64url')}.s`;
 
+// The shape `http` actually throws (see lib/http.ts — it attaches `response` with the
+// status). A bare Error is what a *network* failure looks like, so mocking a taken
+// address with one asserts nothing about the distinction the code has to make.
+const httpError = (status: number, message = 'nope') =>
+  Object.assign(new Error(message), { response: { status, headers: {}, data: {} } });
+
+const authRefusal = () => httpError(401, 'Invalid email or password');
+
 let stdout: string[];
 let exitCode: number | undefined;
 
@@ -102,7 +110,7 @@ describe('numo register', () => {
   // sign-in afterwards is the only signal that the address was already taken.
   it('reports a taken address as CONFLICT, not as a failed login', async () => {
     vi.mocked(http.post).mockResolvedValue({ data: { status: 'ok' } } as never);
-    vi.mocked(postLogin).mockRejectedValue(new Error('Invalid email or password'));
+    vi.mocked(postLogin).mockRejectedValue(authRefusal());
 
     await run();
 
@@ -114,7 +122,7 @@ describe('numo register', () => {
   // Asserting a send it cannot see is the same class of untruth this release removes.
   it('does not claim a reset email was sent', async () => {
     vi.mocked(http.post).mockResolvedValue({ data: { status: 'ok' } } as never);
-    vi.mocked(postLogin).mockRejectedValue(new Error('Invalid email or password'));
+    vi.mocked(postLogin).mockRejectedValue(authRefusal());
 
     await run();
     const { message, hint } = output().error;
@@ -124,10 +132,43 @@ describe('numo register', () => {
 
   it('does not store credentials when the address was taken', async () => {
     vi.mocked(http.post).mockResolvedValue({ data: { status: 'ok' } } as never);
-    vi.mocked(postLogin).mockRejectedValue(new Error('Invalid email or password'));
+    vi.mocked(postLogin).mockRejectedValue(authRefusal());
 
     await run();
     expect(saveCredentials).not.toHaveBeenCalled();
+  });
+
+  // Contract: only a *refused* sign-in means the address was taken. Everything else
+  // that can fail between "account created" and "signed in" — the login limiter (10/min
+  // against register's 5), a 5xx, a dropped connection — is reported as itself.
+  //
+  // This is the boundary the previous tests had inverted: they mocked a bare Error,
+  // which is what the network case looks like, and asserted it WAS CONFLICT. So the
+  // suite pinned the defect — someone whose account had just been created was told it
+  // already existed, given exit 101, and had their credentials discarded.
+  it.each([
+    [429, 'RATE_LIMITED', ExitCode.TEMP_FAIL],
+    [503, 'SERVICE_UNAVAILABLE', ExitCode.UNAVAILABLE],
+  ])('reports a %i between register and sign-in as itself', async (status, kind, code) => {
+    vi.mocked(http.post).mockResolvedValue({ data: { status: 'ok' } } as never);
+    vi.mocked(postLogin).mockRejectedValue(httpError(status as number));
+
+    await run();
+
+    expect(output().error).toMatchObject({ kind, code });
+    expect(exitCode).toBe(code);
+  });
+
+  // No status at all — a connection dropped after the account was created. This is the
+  // exact value the removed assertions used to stand in for a taken address.
+  it('reports a dropped connection as itself, not as a taken address', async () => {
+    vi.mocked(http.post).mockResolvedValue({ data: { status: 'ok' } } as never);
+    vi.mocked(postLogin).mockRejectedValue(new Error('socket hang up'));
+
+    await run();
+
+    expect(output().error.kind).not.toBe('CONFLICT');
+    expect(exitCode).not.toBe(ExitCode.CONFLICT);
   });
 
   it('refuses non-interactively without credentials in the environment', async () => {

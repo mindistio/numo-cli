@@ -45,9 +45,18 @@ export async function register(
 
     // The server answers the same way whether or not the address was free — it must,
     // or it becomes a way to test which addresses are registered. So the sign-in is
-    // where we find out, and a failure here means the address was already taken by
-    // someone whose password this is not.
-    const result = await postLogin(email, password).catch((err) => {
+    // where we find out, and a *refused* sign-in means the address was already taken
+    // by someone whose password this is not.
+    //
+    // Refused, not merely failed. A 429 (login is 10/min against register's 5), a 5xx,
+    // or a connection dropped between the two calls says nothing about the address —
+    // and the account was just created successfully. Reporting those as CONFLICT tells
+    // someone who did sign up that they did not, exits 101, and discards the
+    // credentials they now have. Anything that is not an auth refusal goes to
+    // `classifyError` below and is reported as itself.
+    const result = await postLogin(email, password).catch((err: unknown) => {
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      if (status !== 400 && status !== 401) throw err;
       throw new CliError(
         ErrorKind.CONFLICT,
         'That address is already registered, and the password does not match it.',
