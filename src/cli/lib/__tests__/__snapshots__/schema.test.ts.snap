@@ -15,35 +15,30 @@ exports[`schemaVersion > travels with the payload it describes 1`] = `
       "name": "tasks list",
       "options": [
         {
-          "default": undefined,
           "description": "YYYY-MM-DD or natural language ("tomorrow", "next monday")",
           "flags": "--date <date>",
           "required": false,
           "type": "string",
         },
         {
-          "default": undefined,
           "description": "Show backlog tasks",
           "flags": "--backlog",
           "required": false,
           "type": "boolean",
         },
         {
-          "default": undefined,
           "description": "Filter by tag",
           "flags": "--tag <tag>",
           "required": false,
           "type": "string",
         },
         {
-          "default": undefined,
           "description": "Show yesterday's tasks",
           "flags": "--yesterday",
           "required": false,
           "type": "boolean",
         },
         {
-          "default": undefined,
           "description": "Show tomorrow's tasks",
           "flags": "--tomorrow",
           "required": false,
@@ -77,28 +72,24 @@ exports[`schemaVersion > travels with the payload it describes 1`] = `
       "name": "tasks create",
       "options": [
         {
-          "default": undefined,
           "description": "Task text (alternative to positional text)",
           "flags": "--text <text>",
           "required": false,
           "type": "string",
         },
         {
-          "default": undefined,
           "description": "Due date: YYYY-MM-DD, "YYYY-MM-DD HH:mm", or natural language",
           "flags": "--due <date>",
           "required": false,
           "type": "string",
         },
         {
-          "default": undefined,
           "description": "No due date (Someday / backlog)",
           "flags": "--backlog",
           "required": false,
           "type": "boolean",
         },
         {
-          "default": undefined,
           "description": "Recurring routine: daily | weekly | monthly",
           "enum": [
             "daily",
@@ -111,56 +102,48 @@ exports[`schemaVersion > travels with the payload it describes 1`] = `
           "type": "string",
         },
         {
-          "default": undefined,
           "description": "For --repeat weekly: comma list e.g. Mon,Wed,Fri",
           "flags": "--weekdays <days>",
           "required": false,
           "type": "string",
         },
         {
-          "default": undefined,
           "description": "For --repeat monthly: comma list e.g. 1,15",
           "flags": "--month-days <days>",
           "required": false,
           "type": "string",
         },
         {
-          "default": undefined,
           "description": "Repeat interval (every N days/weeks/months)",
           "flags": "--every <n>",
           "required": false,
           "type": "string",
         },
         {
-          "default": undefined,
           "description": "Comma-separated tags",
           "flags": "--tags <tags>",
           "required": false,
           "type": "string",
         },
         {
-          "default": undefined,
           "description": "Make task public",
           "flags": "--public",
           "required": false,
           "type": "boolean",
         },
         {
-          "default": undefined,
           "description": "Make task private (default)",
           "flags": "--private",
           "required": false,
           "type": "boolean",
         },
         {
-          "default": undefined,
           "description": "Private note",
           "flags": "--note <note>",
           "required": false,
           "type": "string",
         },
         {
-          "default": undefined,
           "description": "Effort 0–3 (S/M/L/XL)",
           "enum": [
             0,
@@ -173,7 +156,6 @@ exports[`schemaVersion > travels with the payload it describes 1`] = `
           "type": "string",
         },
         {
-          "default": undefined,
           "description": "Duration in minutes",
           "flags": "--duration <n>",
           "required": false,
@@ -188,7 +170,6 @@ exports[`schemaVersion > travels with the payload it describes 1`] = `
           "type": "string[]",
         },
         {
-          "default": undefined,
           "description": "Idempotency key — retrying with the same id returns the existing task instead of duplicating",
           "flags": "--client-task-id <id>",
           "required": false,
@@ -209,63 +190,54 @@ exports[`schemaVersion > travels with the payload it describes 1`] = `
       "name": "tasks update",
       "options": [
         {
-          "default": undefined,
           "description": "Task text",
           "flags": "--text <text>",
           "required": false,
           "type": "string",
         },
         {
-          "default": undefined,
           "description": "Due date: YYYY-MM-DD, "YYYY-MM-DD HH:mm", or natural language",
           "flags": "--due <date>",
           "required": false,
           "type": "string",
         },
         {
-          "default": undefined,
           "description": "Strip time-of-day; treat task as all-day",
           "flags": "--clear-time",
           "required": false,
           "type": "boolean",
         },
         {
-          "default": undefined,
           "description": "Alias of --clear-time",
           "flags": "--no-time",
           "required": false,
           "type": "boolean",
         },
         {
-          "default": undefined,
           "description": "Comma-separated tags",
           "flags": "--tags <tags>",
           "required": false,
           "type": "string",
         },
         {
-          "default": undefined,
           "description": "Make task public",
           "flags": "--public",
           "required": false,
           "type": "boolean",
         },
         {
-          "default": undefined,
           "description": "Make task private",
           "flags": "--private",
           "required": false,
           "type": "boolean",
         },
         {
-          "default": undefined,
           "description": "Task note",
           "flags": "--note <note>",
           "required": false,
           "type": "string",
         },
         {
-          "default": undefined,
           "description": "Difficulty 0-3 (S/M/L/XL)",
           "enum": [
             0,
@@ -278,14 +250,12 @@ exports[`schemaVersion > travels with the payload it describes 1`] = `
           "type": "string",
         },
         {
-          "default": undefined,
           "description": "Duration in minutes",
           "flags": "--duration <n>",
           "required": false,
           "type": "string",
         },
         {
-          "default": undefined,
           "description": "Set recurrence: daily | weekly | monthly | none",
           "enum": [
             "daily",
@@ -298,28 +268,24 @@ exports[`schemaVersion > travels with the payload it describes 1`] = `
           "type": "string",
         },
         {
-          "default": undefined,
           "description": "For --repeat weekly: comma list e.g. Mon,Wed",
           "flags": "--weekdays <days>",
           "required": false,
           "type": "string",
         },
         {
-          "default": undefined,
           "description": "For --repeat monthly: comma list e.g. 1,15",
           "flags": "--month-days <days>",
           "required": false,
           "type": "string",
         },
         {
-          "default": undefined,
           "description": "Repeat interval (every N)",
           "flags": "--every <n>",
           "required": false,
           "type": "string",
         },
         {
-          "default": undefined,
           "description": "Move to backlog (clear the due date)",
           "flags": "--backlog",
           "required": false,
@@ -351,14 +317,12 @@ exports[`schemaVersion > travels with the payload it describes 1`] = `
       "name": "tasks delete",
       "options": [
         {
-          "default": undefined,
           "description": "Skip confirmation prompt",
           "flags": "--yes",
           "required": false,
           "type": "boolean",
         },
         {
-          "default": undefined,
           "description": "Read task IDs from stdin (one per line)",
           "flags": "--stdin",
           "required": false,
@@ -382,14 +346,12 @@ exports[`schemaVersion > travels with the payload it describes 1`] = `
       "name": "tasks complete",
       "options": [
         {
-          "default": undefined,
           "description": "Completion datetime "YYYY-MM-DD HH:mm"",
           "flags": "--date <datetime>",
           "required": false,
           "type": "string",
         },
         {
-          "default": undefined,
           "description": "Read task IDs from stdin (one per line)",
           "flags": "--stdin",
           "required": false,
@@ -413,7 +375,6 @@ exports[`schemaVersion > travels with the payload it describes 1`] = `
       "name": "tasks uncomplete",
       "options": [
         {
-          "default": undefined,
           "description": "Read task IDs from stdin (one per line)",
           "flags": "--stdin",
           "required": false,
@@ -433,7 +394,6 @@ exports[`schemaVersion > travels with the payload it describes 1`] = `
       "name": "posts list",
       "options": [
         {
-          "default": undefined,
           "description": "",
           "flags": "--cursor <cursor>",
           "required": false,
@@ -474,7 +434,6 @@ exports[`schemaVersion > travels with the payload it describes 1`] = `
       "name": "posts comments",
       "options": [
         {
-          "default": undefined,
           "description": "",
           "flags": "--cursor <cursor>",
           "required": false,
@@ -508,7 +467,6 @@ exports[`schemaVersion > travels with the payload it describes 1`] = `
       "name": "posts replies",
       "options": [
         {
-          "default": undefined,
           "description": "",
           "flags": "--cursor <cursor>",
           "required": false,

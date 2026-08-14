@@ -56,8 +56,13 @@ export function buildCommandSchema(cmd: Command, fullName: string): Record<strin
         // `o.required` on an Option means "this flag takes a value", not "you must pass
         // this flag" — reading it as the latter marked every valued option required.
         required: o.mandatory === true,
-        default: o.defaultValue,
       };
+      // Only when there is one. Emitting the key unconditionally put
+      // `default: undefined` on every option without a default — a key JSON.stringify
+      // drops, so it never reached an agent, while still taking 42 of the 535 lines of
+      // the review snapshot. That snapshot exists to make a payload change visible;
+      // describing fields the payload does not carry works against it.
+      if (o.defaultValue !== undefined) opt.default = o.defaultValue;
       if (repeatable) opt.repeatable = true;
       if (OPTION_ENUMS[o.long]) opt.enum = OPTION_ENUMS[o.long];
       return opt;
