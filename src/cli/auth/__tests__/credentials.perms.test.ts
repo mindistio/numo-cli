@@ -1,0 +1,79 @@
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+
+// Real filesystem, because the property under test is a filesystem property — a mock
+// would assert that we passed 0o600 to something, not that a file ended up at 0o600.
+const onPosix = process.platform !== 'win32';
+
+const CREDS = { refreshToken: 'rt', uid: 'u1', email: 'a@b.com' };
+
+let tmp: string;
+const env = { ...process.env };
+
+function modeOf(file: string): number {
+  return fs.statSync(file).mode & 0o777;
+}
+
+describe('credentials file permissions (I-7)', () => {
+  beforeEach(() => {
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'numo-perms-'));
+    process.env.NUMO_CONFIG_DIR = path.join(tmp, 'cfg');
+  });
+
+  afterEach(() => {
+    process.env = { ...env };
+    fs.rmSync(tmp, { recursive: true, force: true });
+    vi.resetModules();
+  });
+
+  // I-7: the file holding a refresh token is never readable by group or other, at any
+  // point. This is a condition on the file at all times, not the outcome of one call —
+  // which is why every route that can produce it is checked, not just the first write.
+  it.skipIf(!onPosix)('writes a fresh file no wider than 0600', async () => {
+    const { saveCredentials } = await import('../credentials');
+    saveCredentials(CREDS);
+
+    const file = path.join(process.env.NUMO_CONFIG_DIR!, 'credentials.json');
+    expect(modeOf(file) & 0o077).toBe(0);
+  });
+
+  it.skipIf(!onPosix)('creates the directory itself no wider than 0700', async () => {
+    const { saveCredentials } = await import('../credentials');
+    saveCredentials(CREDS);
+
+    expect(modeOf(process.env.NUMO_CONFIG_DIR!) & 0o077).toBe(0);
+  });
+
+  // writeFileSync's `mode` applies only when it creates the file, so a file that was
+  // already loose stays loose without the explicit chmod. A user who once ran
+  // `chmod 644` on it would otherwise never get it tightened back.
+  it.skipIf(!onPosix)('tightens a pre-existing world-readable file', async () => {
+    const dir = process.env.NUMO_CONFIG_DIR!;
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const file = path.join(dir, 'credentials.json');
+    fs.writeFileSync(file, '{}');
+    fs.chmodSync(file, 0o644);
+
+    const { saveCredentials } = await import('../credentials');
+    saveCredentials(CREDS);
+
+    expect(modeOf(file) & 0o077).toBe(0);
+  });
+
+  // The erase overwrites the bytes before unlinking. What is observable afterwards is
+  // that nothing readable is left at the path — a remnant would be a token on disk that
+  // no command will ever clean up again, because loadCredentials no longer finds it.
+  it('leaves nothing at the path after erasing', async () => {
+    const { saveCredentials, clearCredentials, loadCredentials } = await import('../credentials');
+    saveCredentials(CREDS);
+    const file = path.join(process.env.NUMO_CONFIG_DIR!, 'credentials.json');
+    expect(fs.existsSync(file)).toBe(true);
+
+    clearCredentials();
+
+    expect(fs.existsSync(file)).toBe(false);
+    expect(loadCredentials()).toBeNull();
+  });
+});

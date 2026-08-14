@@ -1,12 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { Command } from 'commander';
-import { buildCommandSchema, REQUIRED_WITHOUT_TTY, ARG_ALTERNATIVES } from '../schema';
+import { buildCommandSchema, REQUIRED_WITHOUT_TTY, ARG_ALTERNATIVES, SCHEMA_VERSION } from '../schema';
 import { registerTasksCommands } from '../../commands/tasks';
 import { registerPostsCommands } from '../../commands/posts';
+import { registerProfileCommands } from '../../commands/profile';
 
 const program = new Command();
 registerTasksCommands(program);
 registerPostsCommands(program);
+registerProfileCommands(program);
 
 function schemaFor(path: string) {
   const cmd = path.split(' ').reduce<Command | undefined>(
@@ -64,6 +66,26 @@ describe('argument.required', () => {
 
   it('is false for a positional that a flag can replace', () => {
     expect(schemaFor('tasks create').arguments[0]).toMatchObject({ name: 'text', required: false, variadic: true });
+  });
+});
+
+describe('schemaVersion', () => {
+  // I-9: a change in what a schema field *means* is accompanied by a schemaVersion
+  // bump. Nothing can check that at runtime — the meaning lives in the reader's head —
+  // so this is a review gate, not an assertion. The version travels inside the snapshot
+  // deliberately: a payload change cannot be approved without the version appearing in
+  // the same diff, which is the moment to decide whether it moved.
+  //
+  // Snapshot failed? Do not just update it. Either bump SCHEMA_VERSION in lib/schema.ts,
+  // or be able to say why the change is additive enough that a pinned agent survives it.
+  it('travels with the payload it describes', () => {
+    const walk = (cmd: Command, prefix: string): Record<string, unknown>[] =>
+      cmd.commands.flatMap((sub) => {
+        const name = prefix ? `${prefix} ${sub.name()}` : sub.name();
+        return [buildCommandSchema(sub, name), ...walk(sub, name)];
+      });
+
+    expect({ schemaVersion: SCHEMA_VERSION, commands: walk(program, '') }).toMatchSnapshot();
   });
 });
 
