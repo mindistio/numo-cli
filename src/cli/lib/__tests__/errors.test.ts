@@ -60,6 +60,16 @@ describe('classifyError — structured body over status', () => {
     expect(e.options.hint).toBeUndefined();
   });
 
+  // numo-api answers a 429 with the bare string "Too many requests" — the same thing
+  // the status table already says. That is not the server explaining itself, and the
+  // hint it would displace is the only place Retry-After is rendered for a human.
+  it('keeps the hint when the body only repeats what the status already said', () => {
+    const e = classifyError(
+      httpError(429, { error: { kind: 'RATE_LIMITED', message: 'Too many requests' } }, { 'retry-after': '42' }),
+    );
+    expect(e.options.hint).toBe('Wait 42 seconds and try again.');
+  });
+
   it('keeps the suggestion from the status table', () => {
     const e = classifyError(httpError(401, { error: { kind: 'AUTH_REQUIRED', message: 'token expired' } }));
     expect(e.options.suggestion).toBe('numo login');

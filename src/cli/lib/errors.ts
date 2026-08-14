@@ -190,7 +190,11 @@ export function classifyError(err: unknown): CliError {
     // knowing only the status. Once the server has explained itself, that explanation
     // is the guidance, and "run with --help" over the top of it points the wrong way.
     // A suggestion is a command to run, so it survives.
-    hint: body?.message != null ? undefined : base?.options.hint,
+    //
+    // "Explained itself" means said something the status table did not already say.
+    // numo-api answers a 429 with the same bare "Too many requests" — dropping the
+    // hint there would throw away the only place Retry-After reaches a human.
+    hint: body?.message != null && body.message !== base?.message ? undefined : base?.options.hint,
     retryable: base?.options.retryable ?? body?.retryable,
     retryAfter: base?.options.retryAfter ?? body?.retryAfter,
     cause: err,
