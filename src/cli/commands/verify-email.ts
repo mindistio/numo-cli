@@ -23,11 +23,20 @@ Reading it needs access to the inbox, not a browser.`)
       requireAuth();
 
       if (opts.code) {
-        await confirmVerificationCode(opts.code);
+        // Report what the server said, not what we hoped. `emailVerified: true` was a
+        // literal printed on any 2xx — the same claim the server itself used to assert
+        // without looking. An older server omits the field; then say the code was
+        // accepted and stop, rather than inventing a state to fill the gap.
+        const { emailVerified } = await confirmVerificationCode(opts.code);
         if (asJson) {
-          printJson({ emailVerified: true });
-        } else {
+          printJson({ emailVerified });
+        } else if (emailVerified === true) {
           console.log(pc.green('Email verified.'));
+        } else if (emailVerified === false) {
+          console.log('Code accepted, but the account still reports unverified.');
+          console.log(pc.dim(`  Check again with: ${pc.cyan('$')} numo verify-email`));
+        } else {
+          console.log(pc.green('Code accepted.'));
         }
         return;
       }

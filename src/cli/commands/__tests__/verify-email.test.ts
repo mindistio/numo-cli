@@ -30,6 +30,7 @@ describe('numo verify-email', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocked.getMe.mockResolvedValue({ uid: 'u1', email: 'a@b.com', emailVerified: false, canCreateTasks: false });
+    mocked.confirm.mockResolvedValue({ status: 'ok', emailVerified: true });
   });
 
   // Contract: refuse before the network, so an unauthenticated caller gets
@@ -80,5 +81,29 @@ describe('numo verify-email', () => {
   it('surfaces a rejected code instead of reporting success', async () => {
     mocked.confirm.mockRejectedValueOnce(new Error('Verification code is invalid or has expired.'));
     await expect(run(['--code', 'stale'])).rejects.toThrow(/invalid or has expired/);
+  });
+
+  // Contract: the reported flag is the server's answer, carried through. It used to be
+  // the literal `true`, printed on any 2xx — the CLI's own copy of the claim the server
+  // had also stopped checking. A 200 says the code was accepted, which is not the same
+  // sentence as "this account is now verified".
+  //
+  // Both rows matter together. Only-true would pass on the old literal; only-false
+  // would pass on a rule that never reports verified at all.
+  it.each([
+    [{ status: 'ok', emailVerified: true }, { emailVerified: true }],
+    [{ status: 'ok', emailVerified: false }, { emailVerified: false }],
+    // An older server omits the field. JSON.stringify drops an undefined value, so the
+    // key is absent from the output too — which is the honest shape: not false, unknown.
+    [{ status: 'ok' }, {}],
+  ])('reports %j as %j', async (serverSaid, expected) => {
+    const logged: string[] = [];
+    const spy = vi.spyOn(console, 'log').mockImplementation((...a) => { logged.push(a.map(String).join(' ')); });
+    mocked.confirm.mockResolvedValueOnce(serverSaid);
+
+    await run(['--code', 'oob-123']);
+    spy.mockRestore();
+
+    expect(JSON.parse(logged.join('\n'))).toStrictEqual(expected);
   });
 });

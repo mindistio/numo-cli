@@ -11,6 +11,11 @@ export async function resendVerificationEmail(): Promise<void> {
   await api.post('/api/auth/verify-email');
 }
 
-export async function confirmVerificationCode(oobCode: string): Promise<void> {
-  await api.post('/api/auth/verify-email/confirm', { oobCode });
+/** Redeem the oobCode from a verification link. The server answers with the account
+ *  state as it stands after the redeem — read it rather than assuming success: the code
+ *  names an address, and the server refuses one that is not the caller's. */
+export async function confirmVerificationCode(
+  oobCode: string,
+): Promise<{ status: string; emailVerified?: boolean }> {
+  return api.post('/api/auth/verify-email/confirm', { oobCode });
 }
