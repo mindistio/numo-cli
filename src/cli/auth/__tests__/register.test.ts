@@ -163,6 +163,41 @@ describe('numo register', () => {
     expect(exitCode).toBe(code);
   });
 
+  // Contract: reporting the failure as itself is not enough — the account exists by
+  // then, and the caller has to be told, or they sign up again for an address that is
+  // now taken by themselves. `numo login` is the command that actually works.
+  it('says the account exists when only the sign-in failed', async () => {
+    vi.mocked(http.post).mockResolvedValue({ data: { status: 'ok' } } as never);
+    vi.mocked(postLogin).mockRejectedValue(httpError(429));
+
+    await run();
+
+    const { suggestion, hint } = output().error;
+    expect(suggestion).toBe('numo login');
+    expect(hint).toMatch(/account was created/i);
+  });
+
+  // ...and not when the address really was someone else's, where "the account was
+  // created" would be exactly backwards.
+  it('does not claim an account was created when the address was taken', async () => {
+    vi.mocked(http.post).mockResolvedValue({ data: { status: 'ok' } } as never);
+    vi.mocked(postLogin).mockRejectedValue(authRefusal());
+
+    await run();
+    expect(`${output().error.hint}`).not.toMatch(/account was created/i);
+  });
+
+  // Liveness for the pair above: the register call itself can still fail, and then
+  // nothing was created and there is no session to go and get.
+  it('does not claim an account was created when register itself failed', async () => {
+    vi.mocked(http.post).mockRejectedValue(httpError(429));
+
+    await run();
+
+    expect(postLogin).not.toHaveBeenCalled();
+    expect(`${output().error.hint}`).not.toMatch(/account was created/i);
+  });
+
   // No status at all — a connection dropped after the account was created. This is the
   // exact value the removed assertions used to stand in for a taken address.
   it('reports a dropped connection as itself, not as a taken address', async () => {

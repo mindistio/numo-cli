@@ -38,10 +38,16 @@ export async function register(
 
   const s = await makeClackSpinner(quietMode);
 
+  // Whether the account exists by the time anything else can fail. Everything after
+  // this point is about getting a session for an account that is already there, so a
+  // failure past it must not be reported as a failure to create one.
+  let accountCreated = false;
+
   try {
     assertSafeApiBase();
     s.start('Creating account...');
     await http.post(`${API_BASE}/api/auth/register`, { email, password });
+    accountCreated = true;
 
     // The server answers the same way whether or not the address was free — it must,
     // or it becomes a way to test which addresses are registered. So the sign-in is
@@ -110,12 +116,31 @@ export async function register(
     printSuccess(root);
   } catch (err: unknown) {
     const classified = err instanceof CliError ? err : classifyError(err);
-    if (quietMode) outputError(classified, true);
 
-    s.stop(pc.red('Could not create the account'));
-    p.log.error(classified.message);
-    if (classified.options.suggestion) p.log.info(`Try: ${classified.options.suggestion}`);
-    if (classified.options.hint) p.log.warning(classified.options.hint);
-    process.exit(classified.exitCode);
+    // The register call can succeed and only the sign-in after it fail — a 429 from
+    // the login limiter (10/min against register's 5), a 5xx, a dropped connection.
+    // The account exists in every one of those; the only thing missing is a session.
+    // Saying "could not create the account" there sends someone to sign up again for
+    // an address that is now taken — by themselves.
+    const sessionOnly = accountCreated && classified.kind !== ErrorKind.CONFLICT;
+    const reported = sessionOnly
+      ? new CliError(classified.kind, classified.message, classified.exitCode, {
+          ...classified.options,
+          suggestion: 'numo login',
+          // Appended, not replaced: a 429's hint carries the Retry-After wait, which
+          // is still the next thing to do — it is just no longer the whole story.
+          hint: [classified.options.hint, 'The account was created; only the sign-in failed.']
+            .filter(Boolean)
+            .join(' '),
+        })
+      : classified;
+
+    if (quietMode) outputError(reported, true);
+
+    s.stop(pc.red(sessionOnly ? 'Account created, but signing in failed' : 'Could not create the account'));
+    p.log.error(reported.message);
+    if (reported.options.suggestion) p.log.info(`Try: ${reported.options.suggestion}`);
+    if (reported.options.hint) p.log.warning(reported.options.hint);
+    process.exit(reported.exitCode);
   }
 }
