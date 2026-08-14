@@ -115,6 +115,14 @@ const KIND_EXIT: Readonly<Partial<Record<ErrorKind, number>>> = {
   [ErrorKind.TIMEOUT]: ExitCode.TEMP_FAIL,
   [ErrorKind.SERVICE_UNAVAILABLE]: ExitCode.UNAVAILABLE,
   [ErrorKind.CONFIG_ERROR]: ExitCode.CONFIG,
+  // Both arrive through a status the table below answers differently, and with no row
+  // of their own they inherited it. numo-api sends INTERNAL as a 500, so it was exiting
+  // 69 (UNAVAILABLE) — the same code as SERVICE_UNAVAILABLE, erasing the distinction
+  // the server draws between "this is down, come back" and "we failed and are not
+  // saying it will work next time". An unclassified failure is exit 1, which is also
+  // what the CLI published before the two classifiers were merged into this one.
+  [ErrorKind.INTERNAL]: ExitCode.GENERAL,
+  [ErrorKind.UNKNOWN]: ExitCode.GENERAL,
 };
 
 const ERROR_KINDS = new Set<string>(Object.values(ErrorKind));
@@ -195,8 +203,15 @@ export function classifyError(err: unknown): CliError {
     // numo-api answers a 429 with the same bare "Too many requests" — dropping the
     // hint there would throw away the only place Retry-After reaches a human.
     hint: body?.message != null && body.message !== base?.message ? undefined : base?.options.hint,
-    retryable: base?.options.retryable ?? body?.retryable,
-    retryAfter: base?.options.retryAfter ?? body?.retryAfter,
+    // Body first for these two, the opposite way round from hint and suggestion above.
+    // The status table can only guess from the number — every 5xx is `retryable: true`
+    // there because most are — while the body is the server saying it about this error.
+    // numo-api's AppError.toJSON always emits the field, so an INTERNAL arrived
+    // carrying an explicit `false` and the table overrode it to `true`. An agent
+    // following the AGENTS.md contract then retried a failure the server had declared
+    // permanent, on top of the four attempts http.ts had already made.
+    retryable: body?.retryable ?? base?.options.retryable,
+    retryAfter: body?.retryAfter ?? base?.options.retryAfter,
     cause: err,
   });
 }

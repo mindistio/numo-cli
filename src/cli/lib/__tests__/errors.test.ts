@@ -183,6 +183,44 @@ describe('invariants', () => {
     }
   });
 
+  // Contract: `retryable` is the server's word about THIS failure, not an inference
+  // from the status. The status table can only guess from the number — every 5xx is
+  // retryable there, because most are — and it was winning. numo-api's AppError.toJSON
+  // always emits the field, so an INTERNAL arrived carrying an explicit `false` and the
+  // CLI published `true` over it. An agent following AGENTS.md then retried a failure
+  // the server had declared permanent, on top of http.ts's four attempts.
+  //
+  // Both rows: only-false would pass on a rule that always reports false, only-true on
+  // one that ignores the body the way the old code did.
+  it.each([
+    [{ kind: 'INTERNAL', message: 'Authentication service error', retryable: false }, false],
+    [{ kind: 'SERVICE_UNAVAILABLE', message: 'Upstream down', retryable: true }, true],
+  ])('takes retryable from the body, not from the status (%j)', (error, expected) => {
+    expect(classifyError(httpError(500, { error })).options.retryable).toBe(expected);
+  });
+
+  // Liveness for the pair above: with no body the status table is still the answer, or
+  // the rule would be "never report retryable" rather than "prefer the body".
+  it('falls back to the status table when the body says nothing', () => {
+    expect(classifyError(httpError(500)).options.retryable).toBe(true);
+  });
+
+  // Contract: INTERNAL is a general failure, exit 1 — not 69. 69 tells an agent the
+  // service is down and coming back, which is the opposite instruction to a permanent
+  // failure. With no row in KIND_EXIT it inherited the 5xx branch's 69, changing a
+  // published exit code when the two classifiers were merged — undocumented, untested.
+  it.each([
+    ['INTERNAL', ErrorKind.INTERNAL],
+    ['UNKNOWN', ErrorKind.UNKNOWN],
+  ])('%s exits 1, not the code its status would give', (_label, kind) => {
+    const e = classifyError(httpError(500, { error: { kind, message: 'boom' } }));
+    expect(e.kind).toBe(kind);
+    expect(e.exitCode).toBe(ExitCode.GENERAL);
+    // Liveness: the same 500 with no kind still maps by status, so this is about the
+    // kind winning rather than about 500 having stopped meaning anything.
+    expect(classifyError(httpError(500)).exitCode).toBe(ExitCode.UNAVAILABLE);
+  });
+
   it('I-6 — sanitizes URLs, paths and addresses too', () => {
     const dirty = 'GET https://api.example.com/v1/x from /Users/someone/.config failed for a@b.com';
     const clean = sanitizeErrorMessage(dirty);

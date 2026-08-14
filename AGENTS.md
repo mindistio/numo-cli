@@ -250,19 +250,24 @@ exit code, never on the wording.
 
 ### Exit codes
 
-| Code | Meaning |
-|------|---------|
-| `0`  | OK |
-| `1`  | General error |
-| `2`  | Usage error (missing argument, invalid input) |
-| `69` | Service unavailable (network, server down) |
-| `75` | Temporary failure (timeout, rate limit) |
-| `77` | No permission (auth required / forbidden) |
-| `78` | Configuration error (missing env var, etc.) |
-| `100`| Not found |
-| `101`| Conflict |
-| `130`| Interrupted (SIGINT) |
-| `143`| Terminated (SIGTERM) |
+| Code | Meaning | Kinds |
+|------|---------|-------|
+| `0`  | OK | — |
+| `1`  | General error | `INTERNAL`, `UNKNOWN` |
+| `2`  | Usage error (missing argument, invalid input) | `INVALID_INPUT`, `MISSING_ARGUMENT` |
+| `69` | Service unavailable (network, server down) | `NETWORK_ERROR`, `SERVICE_UNAVAILABLE` |
+| `75` | Temporary failure (timeout, rate limit) | `TIMEOUT`, `RATE_LIMITED` |
+| `77` | No permission (auth required / forbidden) | `AUTH_REQUIRED`, `AUTH_EXPIRED`, `AUTH_FORBIDDEN` |
+| `78` | Configuration error (missing env var, etc.) | `CONFIG_ERROR` |
+| `100`| Not found | `NOT_FOUND` |
+| `101`| Conflict | `CONFLICT` |
+| `130`| Interrupted (SIGINT) | — |
+| `143`| Terminated (SIGTERM) | — |
+
+`INTERNAL` exits `1`, not `69`. `69` says the service is down and coming back, which
+is a different instruction to an agent. And do not infer retryability from the code:
+read `retryable`, which is the server's own word on this particular failure —
+`INTERNAL` carries `false`.
 
 ## Tips for Agents
 
