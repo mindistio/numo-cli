@@ -56,8 +56,13 @@ describe('numo register', () => {
 
     await run();
 
-    expect(vi.mocked(http.post).mock.calls[0][0]).toContain('/api/auth/register');
-    expect(vi.mocked(http.post).mock.calls[0][1]).toEqual({ email: 'a@b.com', password: 'pw123456' });
+    // Over every call, not the first one: the password is in this body, so a second
+    // request carrying it — a retry, a duplicated call — is the thing worth ruling out.
+    expect(http.post).toHaveBeenCalledTimes(1);
+    expect(http.post).toHaveBeenCalledWith(
+      expect.stringContaining('/api/auth/register'),
+      { email: 'a@b.com', password: 'pw123456' },
+    );
     expect(postLogin).toHaveBeenCalledWith('a@b.com', 'pw123456');
   });
 

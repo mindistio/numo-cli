@@ -1,4 +1,5 @@
 import * as chrono from 'chrono-node';
+import { localDateOnly } from './task-dates';
 
 /**
  * Parse a human-friendly date string into YYYY-MM-DD HH:mm format.
@@ -12,19 +13,17 @@ export function parseHumanDate(input: string): string | null {
   // Pass-through ISO-like dates (YYYY-MM-DD or YYYY-MM-DD HH:mm)
   if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) return trimmed;
 
-  const parsed = chrono.parseDate(trimmed, new Date(), { forwardDate: true });
-  if (!parsed) return null;
+  const [result] = chrono.parse(trimmed, new Date(), { forwardDate: true });
+  if (!result) return null;
 
-  const date = parsed.toISOString().slice(0, 10);
-  const hours = parsed.getHours();
-  const mins = parsed.getMinutes();
-
-  // Only include time if it was explicitly mentioned
-  if (hours === 12 && mins === 0 && !/\d{1,2}:\d{2}|noon|12/.test(trimmed.toLowerCase())) {
-    return date;
-  }
-  if (hours === 0 && mins === 0) return date;
-  return `${date} ${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+  const when = result.start.date();
+  // Local calendar day, never toISOString: at a negative UTC offset a late time carries
+  // the UTC date forward, and "tomorrow 21:00" then lands the day after tomorrow.
+  const date = localDateOnly(when);
+  // Whether the text named a time is chrono's answer to give, not something the digits
+  // can be read for: "in 12 days" and "December 12" both carry a 12 that is not a clock.
+  if (!result.start.isCertain('hour')) return date;
+  return `${date} ${String(when.getHours()).padStart(2, '0')}:${String(when.getMinutes()).padStart(2, '0')}`;
 }
 
 /**
