@@ -160,4 +160,59 @@ describe('authenticateWithPhone', () => {
     // One poll, not a window's worth: the point is that it stopped.
     expect(vi.mocked(http.get).mock.calls.length).toBe(1);
   });
+
+  // Contract: 404 is not the only settled answer. Any other 4xx — a poll secret the
+  // server rejects, a malformed request — cannot become a success by asking again, and
+  // waiting the window out reports it as NETWORK_ERROR with retryable: true, which
+  // names the wrong problem and invites the same five minutes over.
+  it.each([
+    [401, 'AUTH_REQUIRED'],
+    [403, 'AUTH_FORBIDDEN'],
+    [400, 'INVALID_INPUT'],
+  ])('stops on a %i instead of polling out the window', async (status, kind) => {
+    const { http } = await import('../../lib/http');
+    vi.mocked(http.post).mockResolvedValueOnce({
+      data: { sessionId: 'sess-4', pollSecret: 's', userCode: 'PAIR11', verifyUrl: 'http://localhost:3000/v' },
+    } as never);
+    vi.mocked(http.get).mockRejectedValue(
+      Object.assign(new Error('refused'), { response: { status, headers: {}, data: {} } }),
+    );
+
+    const { authenticateWithPhone } = await import('../phone-login');
+
+    vi.useFakeTimers();
+    const promise = authenticateWithPhone({ start: vi.fn(), stop: vi.fn() });
+    const outcome = expect(promise).rejects.toMatchObject({ kind });
+    await vi.advanceTimersByTimeAsync(6000);
+    await outcome;
+
+    expect(vi.mocked(http.get).mock.calls.length).toBe(1);
+  });
+
+  // ...and the two 4xx that mean "later" keep the loop alive, or the rule above would
+  // turn a rate-limited poll into a dead session. Liveness for that rule: the loop must
+  // still be able to succeed after a refusal, not merely stop on the ones listed.
+  it.each([[408], [429]])('keeps polling through a %i', async (status) => {
+    const { http } = await import('../../lib/http');
+    vi.mocked(http.post).mockResolvedValueOnce({
+      data: { sessionId: 'sess-5', pollSecret: 's', userCode: 'PAIR22', verifyUrl: 'http://localhost:3000/v' },
+    } as never);
+    vi.mocked(http.get)
+      .mockRejectedValueOnce(
+        Object.assign(new Error('later'), { response: { status, headers: {}, data: {} } }),
+      )
+      .mockResolvedValueOnce({
+        status: 200,
+        data: { idToken: 'tok', refreshToken: 'rt', uid: 'u9', expiresIn: 3600 },
+      } as never);
+
+    const { authenticateWithPhone } = await import('../phone-login');
+
+    vi.useFakeTimers();
+    const promise = authenticateWithPhone({ start: vi.fn(), stop: vi.fn() });
+    await vi.advanceTimersByTimeAsync(6000);
+
+    await expect(promise).resolves.toMatchObject({ uid: 'u9' });
+    expect(vi.mocked(http.get).mock.calls.length).toBe(2);
+  });
 });

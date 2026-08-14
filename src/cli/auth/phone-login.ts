@@ -1,6 +1,6 @@
 import { http } from '../lib/http';
 import pc from 'picocolors';
-import { Errors, CliError, ErrorKind, ExitCode } from '../lib/errors';
+import { Errors, CliError, ErrorKind, ExitCode, classifyError } from '../lib/errors';
 import { promptText } from '../lib/prompts';
 import { API_BASE } from '../lib/api-client';
 import { assertSafeApiBase } from '../lib/api-base';
@@ -97,12 +97,21 @@ export async function authenticateWithPhone(
       // A session the server no longer has cannot be waited out. Reported as what it is:
       // Errors.networkError takes its argument as a hint, so this used to surface as
       // "Can't reach Numo servers" — retryable, and pointing at the wrong thing entirely.
-      if (err.response?.status === 404) {
+      const status = err.response?.status;
+      if (status === 404) {
         throw new CliError(ErrorKind.NOT_FOUND, 'Verification session expired. Start again.', ExitCode.NOT_FOUND, {
           suggestion: 'numo login --phone',
         });
       }
-      // Other errors — continue polling
+      // Any other 4xx is the server's settled answer — a rejected poll secret, a
+      // malformed request, a session it will not serve. Waiting it out cannot change
+      // it, and the timeout below reports the five minutes as a network problem the
+      // caller should retry, which points at the wrong thing entirely. 408 and 429
+      // are the exceptions: both mean "later", and later is what this loop is for.
+      if (status >= 400 && status < 500 && status !== 408 && status !== 429) {
+        throw classifyError(err);
+      }
+      // Network blips and 5xx — keep polling.
     }
   }
 
