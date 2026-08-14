@@ -41,16 +41,23 @@ export async function authenticateWithPhone(
   // reported as themselves — each naming the command that WOULD have worked. Falling
   // through to the generic classifier would render both as a bare "Access denied" /
   // "Resource not found", which is the state this replaces.
+  //
+  // Matched against the intent that was sent, because the server only produces them
+  // that way round: routes/auth.ts throws 409 solely for `intent: 'signup'` and 404
+  // solely for `intent: 'login'`. A 409 arriving under `login` is therefore not the
+  // gate at all — a proxy or a path typo can produce one — and answering it with
+  // "already exists, try `numo login --phone`" named the command the user had just
+  // run. A wrong NUMO_API_URL made that a loop with no way out of it.
   const startResp = await http
     .post(`${API_BASE}/api/auth/phone/start`, { phoneNumber: phone, intent })
     .catch((err: any) => {
       const status = err?.response?.status;
-      if (status === 409) {
+      if (status === 409 && intent === 'signup') {
         throw new CliError(ErrorKind.CONFLICT, 'An account already exists for that number.', ExitCode.CONFLICT, {
           suggestion: 'numo login --phone',
         });
       }
-      if (status === 404) {
+      if (status === 404 && intent === 'login') {
         throw new CliError(ErrorKind.NOT_FOUND, 'No account exists for that number yet.', ExitCode.NOT_FOUND, {
           suggestion: 'numo register --phone',
         });
@@ -100,7 +107,11 @@ export async function authenticateWithPhone(
       const status = err.response?.status;
       if (status === 404) {
         throw new CliError(ErrorKind.NOT_FOUND, 'Verification session expired. Start again.', ExitCode.NOT_FOUND, {
-          suggestion: 'numo login --phone',
+          // Start again with the command they were running. Hardcoding login sent a
+          // first-time `numo register --phone` user whose session had simply timed out
+          // to `numo login --phone`, which the gate then refuses because verification
+          // never completed and no account exists — back to register, and round again.
+          suggestion: intent === 'signup' ? 'numo register --phone' : 'numo login --phone',
         });
       }
       // Any other 4xx is the server's settled answer — a rejected poll secret, a
@@ -115,5 +126,18 @@ export async function authenticateWithPhone(
     }
   }
 
-  throw Errors.networkError('Phone verification timed out. Try again.');
+  // Not `Errors.networkError`: it takes its argument as a HINT and hardcodes the
+  // message "Can't reach Numo servers", so the sentence below never reached anyone and
+  // a five-minute wait for a human to finish was reported as an unreachable server.
+  // Exactly the defect the 404 branch above already names — it was left standing here.
+  throw new CliError(
+    ErrorKind.TIMEOUT,
+    'Phone verification timed out.',
+    ExitCode.TEMP_FAIL,
+    {
+      suggestion: intent === 'signup' ? 'numo register --phone' : 'numo login --phone',
+      hint: 'Nobody finished the verification in the browser within five minutes.',
+      retryable: true,
+    },
+  );
 }

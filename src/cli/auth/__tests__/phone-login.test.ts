@@ -124,6 +124,64 @@ describe('authenticateWithPhone', () => {
     });
   });
 
+  // Contract: those two mappings belong to the intent that was sent, and to nothing
+  // else. numo-api throws 409 only for `signup` and 404 only for `login`
+  // (routes/auth.ts), so the mismatched pairs below cannot have come from the gate — a
+  // proxy, or a mistyped path in NUMO_API_URL, produces them. Read as the gate anyway,
+  // the CLI answered "already exists, try `numo login --phone`" to someone who had
+  // just run `numo login --phone`, and did so forever.
+  //
+  // The rows above are the liveness partner: the matched pairs still get their
+  // suggestion, so this is about the mismatch, not about the mapping having gone.
+  it.each([
+    [409, 'login' as const],
+    [404, 'signup' as const],
+  ])('does not read a %i under intent %s as the gate', async (status, intent) => {
+    const { http } = await import('../../lib/http');
+    vi.mocked(http.post).mockRejectedValueOnce(
+      Object.assign(new Error('not the gate'), { response: { status } })
+    );
+
+    const { authenticateWithPhone } = await import('../phone-login');
+
+    const err = await authenticateWithPhone({ start: vi.fn(), stop: vi.fn() }, intent).catch(
+      (e) => e
+    );
+    // However it is reported, it must not name the command the user just ran.
+    expect(err?.options?.suggestion).not.toBe(
+      intent === 'signup' ? 'numo register --phone' : 'numo login --phone'
+    );
+  });
+
+  // Contract: an expired session sends the user back to the command they were running.
+  // Hardcoding login sent a first-time `numo register --phone` user — whose session had
+  // merely timed out, so no account exists — to a login the gate then refuses, which
+  // suggests register, which brings them back here.
+  it('names the command that was running when the session expired', async () => {
+    const { http } = await import('../../lib/http');
+    vi.mocked(http.post).mockResolvedValueOnce({
+      data: {
+        sessionId: 's',
+        pollSecret: 's',
+        userCode: 'PAIR00',
+        verifyUrl: 'http://localhost:3000/v',
+      },
+    } as never);
+    vi.mocked(http.get).mockRejectedValue(
+      Object.assign(new Error('gone'), { response: { status: 404 } })
+    );
+
+    const { authenticateWithPhone } = await import('../phone-login');
+
+    vi.useFakeTimers();
+    const promise = authenticateWithPhone({ start: vi.fn(), stop: vi.fn() }, 'signup').catch(
+      (e) => e
+    );
+    await vi.advanceTimersByTimeAsync(2000);
+
+    expect((await promise)?.options?.suggestion).toBe('numo register --phone');
+  });
+
   // Contract: the number is checked here, before it is sent. A malformed one would
   // otherwise start a session that can never be confirmed, and the user waits out the
   // full poll window to find that out.
