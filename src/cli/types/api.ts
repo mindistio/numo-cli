@@ -159,5 +159,9 @@ export interface MeResponse {
   // talks to a server older than itself. Absent means "not reported", which is not
   // the same as false and must never be rendered as one.
   emailVerified?: boolean;
+  /** The community-write gate (posts, likes): a verified email OR a phone identity. */
+  verified?: boolean;
+  /** The task-creation gate — the same rule plus an exemption for accounts older than
+   *  the server's cutoff, so it can be true where `verified` is false. */
   canCreateTasks?: boolean;
 }

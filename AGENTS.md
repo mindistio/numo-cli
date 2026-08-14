@@ -12,11 +12,12 @@ Instructions for AI agents (Claude, GPT, Cursor, Copilot, etc.) integrating with
 
 ```bash
 numo register            # or the hidden alias: numo signup
+numo register --phone    # SMS OTP instead of an email address
 ```
 
 Creates the account and signs in, so the next command is already authenticated. A
 verification link is emailed to the address — see **Email verification** below for
-what it gates.
+what it gates. A phone account is verified by the SMS itself and has no email step.
 
 If the address is already registered under a different password, `register` exits
 `101` / `CONFLICT`. A password reset may have been mailed to the address; the CLI
@@ -32,8 +33,11 @@ numo login
 ```
 Prompts for email + password, or use `--phone` for SMS OTP. Credentials are stored locally.
 
-`numo login --phone` with a number that has no account **creates one**. It is a
-registration path as much as a login one.
+`register` and `login` are not interchangeable for phone. `numo login --phone` with a
+number that has no account exits `100` / `NOT_FOUND`, and `numo register --phone` with
+one that already has an account exits `101` / `CONFLICT`. Each error names the other
+command. (Before 1.8 `login --phone` silently created the account, so a mistyped digit
+signed you into a new empty one.)
 
 ### Non-interactive (agents / CI)
 
@@ -73,7 +77,7 @@ keep working unverified. Everything else — listing, editing, completing, delet
 is never gated.
 
 A phone account satisfies the requirement without any email at all, which makes
-`numo login --phone` a way past it. That carve-out is deliberate: a phone number is
+`numo register --phone` a way past it. That carve-out is deliberate: a phone number is
 only ever stored after an OTP, so it is already a verified identity.
 
 ```bash
@@ -91,6 +95,14 @@ up to an hour after the link is clicked — the payload says so via
 `emailVerifiedSource: "cached_token"` and `emailVerifiedStale: true`. The
 authoritative answer is the response to the request you actually make; `numo doctor`
 asks the server live and reports it as the `verification` check.
+
+That check covers **two** gates, because they can disagree. The server reports
+`verified` (posts and likes — a verified email or a verified phone, no exemptions)
+and `canCreateTasks` (the same rule plus an exemption for accounts older than the
+cutoff). A grandfathered account has `canCreateTasks: true` and `verified: false`: it
+may create tasks and may not post. `doctor` fails on either, and names the capability
+that is gone. A server too old to report either field yields a `warn`, never a
+`fail` — absent is not false.
 
 ### Ending a session
 

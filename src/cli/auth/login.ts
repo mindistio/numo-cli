@@ -47,7 +47,19 @@ export function printSuccess(root?: Command) {
   console.log(`  ${pc.dim('Run')} numo commands ${pc.dim('to see all commands.')}\n`);
 }
 
-export async function login(options: { phone?: boolean; json?: boolean | string; quiet?: boolean } = {}, root?: Command) {
+/**
+ * Sign in, or — with `intent: 'signup'` — create an account by phone.
+ *
+ * `numo register --phone` routes here rather than into register.ts: past the intent,
+ * phone signup and phone login are the same handshake, and the credential save, quiet
+ * mode and error contract around it are already written once here.
+ */
+export async function login(
+  options: { phone?: boolean; intent?: 'login' | 'signup'; json?: boolean | string; quiet?: boolean } = {},
+  root?: Command,
+) {
+  const intent = options.intent ?? 'login';
+  const signingUp = intent === 'signup';
   const envEmail = process.env.NUMO_LOGIN_EMAIL;
   const envPassword = process.env.NUMO_LOGIN_PASSWORD;
   const hasEnvCreds = !!(envEmail && envPassword);
@@ -71,7 +83,7 @@ export async function login(options: { phone?: boolean; json?: boolean | string;
   }
 
   const p = await import('@clack/prompts');
-  if (!quietMode) p.intro(pc.bold('Numo — Login'));
+  if (!quietMode) p.intro(pc.bold(signingUp ? 'Numo — Create account' : 'Numo — Login'));
 
   let method: 'email' | 'phone' = options.phone ? 'phone' : 'email';
 
@@ -92,7 +104,7 @@ export async function login(options: { phone?: boolean; json?: boolean | string;
 
     if (method === 'phone') {
       const { authenticateWithPhone } = await import('./phone-login');
-      result = await authenticateWithPhone(s);
+      result = await authenticateWithPhone(s, intent);
     } else if (hasEnvCreds) {
       s.start('Signing in...');
       result = await postLogin(envEmail!, envPassword!);
@@ -119,7 +131,7 @@ export async function login(options: { phone?: boolean; json?: boolean | string;
       return;
     }
 
-    s.stop(`Logged in as ${pc.green(result.displayName)}`);
+    s.stop(`${signingUp ? 'Account created for' : 'Logged in as'} ${pc.green(result.displayName)}`);
     p.outro('You are ready to go!');
     printSuccess(root);
   } catch (err: unknown) {
@@ -127,8 +139,9 @@ export async function login(options: { phone?: boolean; json?: boolean | string;
     if (quietMode) {
       outputError(classified, true);
     }
-    s.stop(pc.red('Login failed'));
+    s.stop(pc.red(signingUp ? 'Could not create the account' : 'Login failed'));
     p.log.error(classified.message);
+    if (classified.options.suggestion) p.log.info(`Try: ${classified.options.suggestion}`);
     if (classified.options.hint) p.log.warning(classified.options.hint);
     process.exit(classified.exitCode);
   }

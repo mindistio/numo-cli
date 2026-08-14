@@ -81,14 +81,20 @@ program
   .command('register')
   .alias('signup')
   .description('Create a Numo account and sign in')
+  .option('--phone', 'Create the account with a phone number (SMS) instead of an email')
   .action(async function (this: Command) { await register(this.optsWithGlobals(), program); })
   .addHelpText('after', `
 Examples:
   $ numo register                                       # Interactive
+  $ numo register --phone                               # SMS OTP flow
   $ NUMO_LOGIN_EMAIL=… NUMO_LOGIN_PASSWORD=… numo register --json   # Non-interactive (CI/agents)
 
 Creating an account signs you in immediately. A verification link is emailed to the
-address; some actions stay unavailable until you follow it or run numo verify-email.`);
+address; some actions stay unavailable until you follow it or run numo verify-email.
+A phone account is verified by the SMS itself, so it has no email step.
+
+register and login are not interchangeable for phone: registering a number that
+already has an account is refused, and so is logging in with one that does not.`);
 
 registerVerifyEmailCommand(program);
 

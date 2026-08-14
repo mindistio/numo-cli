@@ -76,6 +76,54 @@ describe('authenticateWithPhone', () => {
     for (const url of urls) expect(url).not.toContain('secret-abc');
   });
 
+  // Contract: the intent reaches the server. Without it numo-api takes its legacy
+  // no-gate path, where a login with an unregistered number silently CREATES an
+  // account — so a mistyped digit signed the user into a new empty account with
+  // nothing to read that said so.
+  it.each([
+    ['login', undefined],
+    ['login', 'login' as const],
+    ['signup', 'signup' as const],
+  ])('sends intent %s to /phone/start', async (expected, passed) => {
+    const { http } = await import('../../lib/http');
+    vi.mocked(http.post).mockResolvedValueOnce({
+      data: { sessionId: 's', pollSecret: 'ps', userCode: 'PAIR11', verifyUrl: 'http://localhost:3000/v' },
+    } as never);
+    vi.mocked(http.get).mockResolvedValueOnce({
+      status: 200, data: { idToken: 't', refreshToken: 'r', uid: 'u', expiresIn: 3600 },
+    } as never);
+
+    const { authenticateWithPhone } = await import('../phone-login');
+
+    vi.useFakeTimers();
+    const promise = passed === undefined
+      ? authenticateWithPhone({ start: vi.fn(), stop: vi.fn() })
+      : authenticateWithPhone({ start: vi.fn(), stop: vi.fn() }, passed);
+    await vi.advanceTimersByTimeAsync(2000);
+    await promise;
+
+    const [, body] = vi.mocked(http.post).mock.calls[0];
+    expect(body).toMatchObject({ intent: expected });
+  });
+
+  // Contract: the gate's two refusals are reported as themselves, each naming the
+  // command that would have worked. They are the only reason to send an intent at all;
+  // rendered as a generic 403/404 the user learns nothing they can act on.
+  it.each([
+    [409, 'signup' as const, /already exists/i, 'numo login --phone'],
+    [404, 'login' as const, /no account/i, 'numo register --phone'],
+  ])('maps a %i from the gate to a suggestion', async (status, intent, message, suggestion) => {
+    const { http } = await import('../../lib/http');
+    vi.mocked(http.post).mockRejectedValueOnce(Object.assign(new Error('gate'), { response: { status } }));
+
+    const { authenticateWithPhone } = await import('../phone-login');
+
+    await expect(authenticateWithPhone({ start: vi.fn(), stop: vi.fn() }, intent)).rejects.toMatchObject({
+      message: expect.stringMatching(message),
+      options: expect.objectContaining({ suggestion }),
+    });
+  });
+
   // Contract: the number is checked here, before it is sent. A malformed one would
   // otherwise start a session that can never be confirmed, and the user waits out the
   // full poll window to find that out.

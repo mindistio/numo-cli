@@ -114,6 +114,51 @@ describe('numo doctor', () => {
     expect(report.ok).toBe(false);
   });
 
+  // Contract: the community gate is reported even when the task gate is open. These two
+  // disagree for a grandfathered account — it may create tasks and may not post — and
+  // reading only canCreateTasks told that account "verification ok" while every like it
+  // made was being refused. The message has to name which capability is gone, because
+  // "not verified" alone does not tell the user what stopped working.
+  it('fails when posting is blocked even though task creation is allowed', async () => {
+    vi.mocked(getMe).mockResolvedValue({
+      uid: 'u1', email: 'a@b.com', emailVerified: false, verified: false, canCreateTasks: true,
+    });
+
+    const { report } = await doctor();
+
+    expect(checkNamed(report, 'verification')).toMatchObject({ status: 'fail' });
+    expect(checkNamed(report, 'verification')?.message).toMatch(/posting/i);
+    expect(checkNamed(report, 'verification')?.message).not.toMatch(/creating tasks/i);
+    expect(report.ok).toBe(false);
+  });
+
+  // Liveness for the pair above: with both gates open it must actually pass. A check
+  // hard-wired to fail on `verified === false` satisfies that test and this one too;
+  // a check hard-wired to fail satisfies only that one.
+  it('passes when both gates are open', async () => {
+    vi.mocked(getMe).mockResolvedValue({
+      uid: 'u1', email: 'a@b.com', emailVerified: true, verified: true, canCreateTasks: true,
+    });
+
+    const { report } = await doctor();
+
+    expect(checkNamed(report, 'verification')).toMatchObject({ status: 'ok' });
+    expect(report.ok).toBe(true);
+  });
+
+  // A phone account has no email address, so it has nothing to verify by email and
+  // never will. Telling it "Email verified" is a claim about a field it does not have.
+  it('does not credit an email to a phone account', async () => {
+    vi.mocked(getMe).mockResolvedValue({
+      uid: 'u1', email: null, emailVerified: false, verified: true, canCreateTasks: true,
+    });
+
+    const { report } = await doctor();
+
+    expect(checkNamed(report, 'verification')).toMatchObject({ status: 'ok' });
+    expect(checkNamed(report, 'verification')?.message).not.toMatch(/email/i);
+  });
+
   it('reports not being logged in as a failure, and skips the token check', async () => {
     vi.mocked(loadCredentials).mockReturnValue(null);
 

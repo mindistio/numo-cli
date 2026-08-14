@@ -1,7 +1,7 @@
 import type { Command } from 'commander';
 import pc from 'picocolors';
 import { http } from '../lib/http';
-import { postLogin, printSuccess } from './login';
+import { login, postLogin, printSuccess } from './login';
 import { saveCredentials } from './credentials';
 import { promptText, promptPassword } from '../lib/prompts';
 import { CliError, ErrorKind, ExitCode, Errors, classifyError } from '../lib/errors';
@@ -12,9 +12,15 @@ import { decodeTokenClaims } from '../lib/token';
 import { outputError, printJson } from '../lib/output';
 
 export async function register(
-  options: { json?: boolean | string; quiet?: boolean } = {},
+  options: { phone?: boolean; json?: boolean | string; quiet?: boolean } = {},
   root?: Command,
 ) {
+  // Phone signup is the login handshake with a different intent, and everything around
+  // it — the credential save, quiet mode, the error contract — is already written there.
+  if (options.phone) {
+    return login({ phone: true, intent: 'signup', json: options.json, quiet: options.quiet }, root);
+  }
+
   const envEmail = process.env.NUMO_LOGIN_EMAIL;
   const envPassword = process.env.NUMO_LOGIN_PASSWORD;
   const hasEnvCreds = !!(envEmail && envPassword);

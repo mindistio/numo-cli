@@ -163,19 +163,32 @@ async function runChecks(): Promise<CheckResult[]> {
     // tell a user who has just verified that they are still blocked.
     try {
       const me = await getMe();
-      if (me.canCreateTasks === undefined) {
-        // An older server does not report this. Saying "blocked" here would be the
+      // Two gates, reported separately because they disagree: `verified` guards posts
+      // and likes with no exemptions, `canCreateTasks` grandfathers accounts older than
+      // the server's cutoff. Reporting only the task one told a legacy account
+      // "verification ok" while the community gate was refusing every like it made.
+      const blocked = [
+        me.verified === false && 'posting and likes',
+        me.canCreateTasks === false && 'creating tasks',
+      ].filter((x): x is string => typeof x === 'string');
+
+      if (me.verified === undefined && me.canCreateTasks === undefined) {
+        // An older server does not report either. Saying "blocked" here would be the
         // CLI inventing a refusal the server never made — and it fails the whole
         // health check, which in CI reads as a broken install.
         checks.push({ name: 'verification', status: 'warn', message: 'Server does not report verification status' });
       } else {
         checks.push({
           name: 'verification',
-          status: me.canCreateTasks ? 'ok' : 'fail',
-          message: me.canCreateTasks
-            ? `Email ${me.emailVerified ? 'verified' : 'unverified — not required for this account'}`
-            : 'Email not verified — creating tasks is blocked',
-          fix: me.canCreateTasks ? undefined : 'numo verify-email',
+          status: blocked.length ? 'fail' : 'ok',
+          message: blocked.length
+            ? `Identity not verified — ${blocked.join(' and ')} blocked`
+            // Not "email verified": a phone account passes with no email at all, and
+            // telling it its email is verified is a claim about a field it lacks.
+            : me.emailVerified
+              ? 'Email verified'
+              : 'Verified',
+          fix: blocked.length ? 'numo verify-email' : undefined,
         });
       }
     } catch (err: unknown) {

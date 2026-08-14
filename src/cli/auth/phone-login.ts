@@ -8,7 +8,20 @@ import type { AuthResult } from './login';
 const POLL_INTERVAL = 2000;
 const POLL_TIMEOUT = 5 * 60 * 1000; // 5 minutes
 
-export async function authenticateWithPhone(spinner: { start: (msg?: string) => void; stop: (msg?: string) => void }): Promise<AuthResult> {
+/**
+ * Run the phone device-flow handshake.
+ *
+ * `intent` tells the server whether this number is supposed to exist yet. Omitting it
+ * takes numo-api's legacy no-gate path, where a login with a number that has no
+ * account silently CREATES one — so `numo login --phone` on a mistyped number signed
+ * the user into a brand-new empty account with no error to read, and `numo register`
+ * had no phone route at all. The web modal has always sent it; this brings the CLI in
+ * line with it and with the API's own signup/login distinction.
+ */
+export async function authenticateWithPhone(
+  spinner: { start: (msg?: string) => void; stop: (msg?: string) => void },
+  intent: 'login' | 'signup' = 'login',
+): Promise<AuthResult> {
   assertSafeApiBase();
   const p = await import('@clack/prompts');
 
@@ -24,9 +37,26 @@ export async function authenticateWithPhone(spinner: { start: (msg?: string) => 
 
   spinner.start('Starting phone verification...');
 
-  const startResp = await http.post(`${API_BASE}/api/auth/phone/start`, {
-    phoneNumber: phone,
-  });
+  // The gate's two refusals are the whole point of sending an intent, so they are
+  // reported as themselves — each naming the command that WOULD have worked. Falling
+  // through to the generic classifier would render both as a bare "Access denied" /
+  // "Resource not found", which is the state this replaces.
+  const startResp = await http
+    .post(`${API_BASE}/api/auth/phone/start`, { phoneNumber: phone, intent })
+    .catch((err: any) => {
+      const status = err?.response?.status;
+      if (status === 409) {
+        throw new CliError(ErrorKind.CONFLICT, 'An account already exists for that number.', ExitCode.CONFLICT, {
+          suggestion: 'numo login --phone',
+        });
+      }
+      if (status === 404) {
+        throw new CliError(ErrorKind.NOT_FOUND, 'No account exists for that number yet.', ExitCode.NOT_FOUND, {
+          suggestion: 'numo register --phone',
+        });
+      }
+      throw err;
+    });
 
   const { sessionId, pollSecret, userCode, verifyUrl } = startResp.data;
   spinner.stop('');
