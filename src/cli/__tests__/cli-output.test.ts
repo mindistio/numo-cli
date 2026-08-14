@@ -71,30 +71,51 @@ describe('CLI help output', () => {
 });
 
 describe('commands --json', () => {
-  it('outputs valid JSON with commands array', () => {
-    const out = run('commands --json');
-    const data = JSON.parse(out);
-    expect(data.commands).toBeDefined();
-    expect(Array.isArray(data.commands)).toBe(true);
-    expect(data.commands.length).toBeGreaterThan(5);
+  // Contract: the root envelope. Agents pin behaviour by branching on `schemaVersion`,
+  // so it disappearing or changing meaning without a bump breaks them silently. The
+  // literal is spelled out rather than imported so a bump cannot land without this diff.
+  it('carries the versioned envelope agents branch on', () => {
+    const data = JSON.parse(run('commands --json'));
+    expect(data.schemaVersion).toBe('1');
+    // Cross-checked against --version rather than hard-coded: the envelope has to report
+    // the version the CLI actually is, not one that drifted from it.
+    expect(data.cliVersion).toBe(run('--version').trim());
   });
 
-  it('each command has name and description', () => {
-    const out = run('commands --json');
-    const { commands } = JSON.parse(out);
-    for (const cmd of commands) {
-      expect(typeof cmd.name).toBe('string');
-      expect(typeof cmd.description).toBe('string');
-    }
+  // Contract: every runnable command is listed — this is the whole discovery surface for
+  // an agent. A count threshold passes on a truncated list, so the names are snapshotted:
+  // adding or removing a command has to appear in this diff.
+  it('lists every runnable command', () => {
+    const { commands } = JSON.parse(run('commands --json'));
+    expect(commands.map((c: any) => c.name)).toMatchSnapshot();
+  });
+
+  it('gives every command a name and a description', () => {
+    const { commands } = JSON.parse(run('commands --json'));
+    // Liveness first. The per-item check below holds nothing on an empty list, and an
+    // empty list is exactly what a broken traversal produces. Completeness is the
+    // snapshot above; this only has to rule out the vacuous pass.
+    expect(commands.length).toBeGreaterThan(0);
+    expect(commands.filter((c: any) => !c.name?.trim() || !c.description?.trim())).toEqual([]);
   });
 });
 
 describe('schema', () => {
-  it('outputs valid JSON for all commands', () => {
-    const out = run('schema');
-    const data = JSON.parse(out);
-    expect(data.commands).toBeDefined();
-    expect(Array.isArray(data.commands)).toBe(true);
+  // Deliberately a different literal from the commands payload above: the two are
+  // versioned separately, and pinning both here is what keeps a shared bump from passing
+  // unnoticed.
+  it('reports schema version 2', () => {
+    expect(JSON.parse(run('schema')).schemaVersion).toBe('2');
+  });
+
+  // Invariant: the two introspection surfaces describe the same command set. They are
+  // separate traversals — `command-map.ts` and the walk in `cli.ts` — so one of them
+  // going short surfaces as disagreement here instead of as a quietly shorter list.
+  it('describes exactly the commands that `numo commands` lists', () => {
+    const listed = JSON.parse(run('commands --json')).commands.map((c: any) => c.name).sort();
+    const described = JSON.parse(run('schema')).commands.map((c: any) => c.name).sort();
+    expect(described).toEqual(listed);
+    expect(described.length).toBeGreaterThan(0);
   });
 
   it('schema tasks create has options', () => {
@@ -105,10 +126,29 @@ describe('schema', () => {
     expect(data.options.some((o: any) => o.flags.includes('--text'))).toBe(true);
   });
 
-  it('schema nonexistent exits with error', () => {
-    const { status, stderr } = runMayFail('schema nonexistent');
-    expect(status).not.toBe(0);
-    expect(stderr).toContain('Unknown command');
+  // Contract: a failure here is the same JSON envelope as everywhere else. This asserted
+  // the wording instead — the one thing an agent is told never to branch on — and so
+  // ratified a path that printed bare text, where `JSON.parse(stderr)` threw for exactly
+  // the caller the command exists to serve.
+  it('reports an unknown command in the error envelope, exit 2', () => {
+    const { stdout, stderr, status } = runMayFail('schema nonexistent --json');
+    expect(status).toBe(2);
+    expect(stdout).toBe('');
+    expect(JSON.parse(stderr).error).toMatchObject({ kind: 'INVALID_INPUT', code: 2 });
+  });
+});
+
+describe('completion', () => {
+  // zsh reads `#compdef` only as the first line of the file, so its position is the
+  // contract, not its presence.
+  it('emits a zsh script whose first line is the compdef tag', () => {
+    expect(run('completion zsh').split('\n')[0]).toBe('#compdef numo');
+  });
+
+  it('rejects an unsupported shell in the error envelope, exit 2', () => {
+    const { status, stderr } = runMayFail('completion bash --json');
+    expect(status).toBe(2);
+    expect(JSON.parse(stderr).error).toMatchObject({ kind: 'INVALID_INPUT', code: 2 });
   });
 });
 

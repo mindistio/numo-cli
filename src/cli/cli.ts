@@ -255,9 +255,13 @@ program
     for (const part of parts) {
       const sub = cmd.commands.find((c: Command) => c.name() === part);
       if (!sub) {
-        console.error(`Unknown command: ${cmdPath}`);
-        console.error(`Available: ${cmd.commands.map((c: Command) => c.name()).join(', ')}`);
-        process.exit(ExitCode.USAGE);
+        outputError(
+          Errors.invalidInput(
+            `Unknown command: ${cmdPath}`,
+            `Available: ${cmd.commands.map((c: Command) => c.name()).join(', ')}`,
+          ),
+          isQuietMode(this.optsWithGlobals()),
+        );
       }
       cmd = sub;
     }
@@ -267,10 +271,12 @@ program
 program
   .command('completion <shell>')
   .description('Generate shell completion script')
-  .action(function (shell: string) {
+  .action(function (this: Command, shell: string) {
     if (shell !== 'zsh') {
-      console.error(`Unsupported shell: ${shell}. Currently only 'zsh' is supported.`);
-      process.exit(ExitCode.USAGE);
+      outputError(
+        Errors.invalidInput(`Unsupported shell: ${shell}`, "Only 'zsh' is supported."),
+        isQuietMode(this.optsWithGlobals()),
+      );
     }
 
     const lines: string[] = ['#compdef numo', '', '_numo() {', '  local -a commands', ''];
