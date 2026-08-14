@@ -29,11 +29,23 @@ function unexpiredToken(extraClaims: Record<string, unknown> = {}): string {
   return `x.${Buffer.from(JSON.stringify(claims)).toString('base64url')}.y`;
 }
 
+/**
+ * Environment for the child CLI. FORCE_COLOR is removed rather than overridden: Node
+ * writes a warning to stderr when it sees both it and NO_COLOR, and several cases here
+ * parse stderr as JSON. A developer who exports FORCE_COLOR would otherwise see them fail
+ * for a reason unrelated to whatever they changed.
+ */
+function childEnv(extraEnv?: Record<string, string>): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env, NO_COLOR: '1', npm_config_loglevel: 'error', ...extraEnv };
+  delete env.FORCE_COLOR;
+  return env;
+}
+
 function run(args: string): string {
   return execSync(`npx tsx src/cli/cli.ts ${args}`, {
     encoding: 'utf8',
     timeout: 10000,
-    env: { ...process.env, NO_COLOR: '1', npm_config_loglevel: 'error' },
+    env: childEnv(),
   });
 }
 
@@ -42,7 +54,7 @@ function runMayFail(args: string, extraEnv?: Record<string, string>): { stdout: 
     const stdout = execSync(`npx tsx src/cli/cli.ts ${args}`, {
       encoding: 'utf8',
       timeout: 10000,
-      env: { ...process.env, NO_COLOR: '1', npm_config_loglevel: 'error', ...extraEnv },
+      env: childEnv(extraEnv),
     });
     return { stdout, stderr: '', status: 0 };
   } catch (err: any) {

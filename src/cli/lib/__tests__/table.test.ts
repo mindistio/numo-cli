@@ -1,12 +1,18 @@
 import { describe, it, expect } from 'vitest';
 import { renderTable } from '../table';
 
+// Colour is stripped before anything is measured. The header row is bold, so with colour
+// on it carries escape sequences that no user sees but that count toward `.length` — the
+// assertions below are about the width a reader perceives, and reading the raw string
+// makes them pass or fail on whether the terminal happened to want colour.
+const visible = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '');
+
 /** Cell text of one rendered row, borders and padding removed. */
 function cells(line: string): string[] {
-  return line.split(/[|│]/).slice(1, -1).map((c) => c.trim());
+  return visible(line).split(/[|│]/).slice(1, -1).map((c) => c.trim());
 }
 
-const bodyLines = (table: string) => table.split('\n').filter((l) => /[|│]/.test(l));
+const bodyLines = (table: string) => visible(table).split('\n').filter((l) => /[|│]/.test(l));
 
 describe('renderTable', () => {
   it('says so when there is nothing to show, rather than drawing an empty frame', () => {

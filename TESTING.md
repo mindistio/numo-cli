@@ -66,6 +66,17 @@ Isolate before crediting, too — `vitest -t '<name>'`. A test can look like it 
 when the failure actually comes from a neighbour in the same file, which means deleting the
 neighbour silently stops the rule from being checked.
 
+### 5. An assertion about rendered output must not measure the environment
+
+Terminal output carries colour, box-drawing characters and unicode that depend on where it
+runs, not on whether the code is right. `renderTable`'s columns were checked with
+`line.length`, which passes locally and fails in CI, where colour is on and the bold header
+carries escape sequences no reader sees. Strip them and measure what a reader perceives.
+
+The same trap in a different shape got a `truncate` case deleted: it pinned a literal `…`,
+which is `...` wherever the terminal has no unicode. If an assertion would change with the
+terminal, it is describing the runner.
+
 ## The snapshots are review gates
 
 `schema.test.ts` snapshots the full `numo schema` payload with `SCHEMA_VERSION` inside
