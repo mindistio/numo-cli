@@ -30,6 +30,53 @@ export async function postLogin(email: string, password: string): Promise<AuthRe
   };
 }
 
+/**
+ * The non-interactive credential pair, or null when it is not fully set.
+ *
+ * Both halves or neither: one alone is a half-configured CI job, and treating it as
+ * "no env creds" is what makes that fail with the config error rather than by
+ * prompting into a pipe that will never answer.
+ */
+export function readEnvCredentials(): { email: string; password: string } | null {
+  const email = process.env.NUMO_LOGIN_EMAIL;
+  const password = process.env.NUMO_LOGIN_PASSWORD;
+  return email && password ? { email, password } : null;
+}
+
+/** Persist a completed handshake. The field rename (displayName → email) is the whole
+ *  reason this is worth a name: both flows did it by hand, and a third would too. */
+export function saveAuthResult(result: AuthResult): void {
+  saveCredentials({
+    refreshToken: result.refreshToken,
+    uid: result.uid,
+    email: result.displayName,
+    idToken: result.idToken,
+    idTokenExpiry: result.idTokenExpiry,
+  });
+}
+
+/**
+ * The end of every failed auth flow: the machine-readable envelope when one was asked
+ * for, then the human one, then the exit code that belongs to the kind.
+ *
+ * Takes the error already reframed. Deciding WHAT to report is each flow's own
+ * business — register turns a post-creation failure into "the account exists, only
+ * the sign-in failed", which would be a lie on the login path — but saying it is the
+ * same five steps in the same order, and they were written twice.
+ */
+export async function reportAuthFailure(
+  reported: CliError,
+  opts: { spinner: ClackSpinner; quietMode: boolean; stopMessage: string },
+): Promise<never> {
+  const p = await import('@clack/prompts');
+  if (opts.quietMode) outputError(reported, true);
+  opts.spinner.stop(pc.red(opts.stopMessage));
+  p.log.error(reported.message);
+  if (reported.options.suggestion) p.log.info(`Try: ${reported.options.suggestion}`);
+  if (reported.options.hint) p.log.warning(reported.options.hint);
+  return process.exit(reported.exitCode);
+}
+
 async function authenticateInteractive(spinner: ClackSpinner): Promise<AuthResult> {
   const email = await promptText({ message: 'Email', required: true });
   const password = await promptPassword({ message: 'Password' });
@@ -60,9 +107,8 @@ export async function login(
 ) {
   const intent = options.intent ?? 'login';
   const signingUp = intent === 'signup';
-  const envEmail = process.env.NUMO_LOGIN_EMAIL;
-  const envPassword = process.env.NUMO_LOGIN_PASSWORD;
-  const hasEnvCreds = !!(envEmail && envPassword);
+  const envCreds = readEnvCredentials();
+  const hasEnvCreds = !!envCreds;
   const quietMode = isQuietMode(options);
 
   // Non-interactive mode without env-creds and without --phone has no way to collect input
@@ -107,18 +153,12 @@ export async function login(
       result = await authenticateWithPhone(s, intent);
     } else if (hasEnvCreds) {
       s.start('Signing in...');
-      result = await postLogin(envEmail!, envPassword!);
+      result = await postLogin(envCreds.email, envCreds.password);
     } else {
       result = await authenticateInteractive(s);
     }
 
-    saveCredentials({
-      refreshToken: result.refreshToken,
-      uid: result.uid,
-      email: result.displayName,
-      idToken: result.idToken,
-      idTokenExpiry: result.idTokenExpiry,
-    });
+    saveAuthResult(result);
 
     if (quietMode) {
       printJson({
@@ -136,13 +176,10 @@ export async function login(
     printSuccess(root);
   } catch (err: unknown) {
     const classified = err instanceof CliError ? err : classifyError(err);
-    if (quietMode) {
-      outputError(classified, true);
-    }
-    s.stop(pc.red(signingUp ? 'Could not create the account' : 'Login failed'));
-    p.log.error(classified.message);
-    if (classified.options.suggestion) p.log.info(`Try: ${classified.options.suggestion}`);
-    if (classified.options.hint) p.log.warning(classified.options.hint);
-    process.exit(classified.exitCode);
+    await reportAuthFailure(classified, {
+      spinner: s,
+      quietMode,
+      stopMessage: signingUp ? 'Could not create the account' : 'Login failed',
+    });
   }
 }

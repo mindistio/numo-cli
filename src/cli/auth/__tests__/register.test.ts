@@ -4,7 +4,16 @@ vi.mock('../../lib/http', () => ({ http: { post: vi.fn() } }));
 vi.mock('../../lib/api-base', () => ({ assertSafeApiBase: vi.fn() }));
 vi.mock('../../lib/api-client', () => ({ API_BASE: 'http://localhost:3000' }));
 vi.mock('../credentials', () => ({ saveCredentials: vi.fn() }));
-vi.mock('../login', () => ({ postLogin: vi.fn(), printSuccess: vi.fn() }));
+// Only the two that reach the network or the screen are stubbed. The rest of login.ts
+// — readEnvCredentials, saveAuthResult, reportAuthFailure — is shared plumbing that
+// register genuinely runs, and stubbing it would test the double instead of the code.
+// A hand-written factory here also had to be kept in step with login.ts's export list,
+// which is how this mock silently became incomplete.
+vi.mock('../login', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../login')>()),
+  postLogin: vi.fn(),
+  printSuccess: vi.fn(),
+}));
 vi.mock('@clack/prompts', () => ({
   intro: vi.fn(), outro: vi.fn(),
   log: { info: vi.fn(), error: vi.fn(), warning: vi.fn() },

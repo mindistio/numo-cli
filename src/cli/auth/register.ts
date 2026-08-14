@@ -1,8 +1,14 @@
 import type { Command } from 'commander';
 import pc from 'picocolors';
 import { http } from '../lib/http';
-import { login, postLogin, printSuccess } from './login';
-import { saveCredentials } from './credentials';
+import {
+  login,
+  postLogin,
+  printSuccess,
+  readEnvCredentials,
+  reportAuthFailure,
+  saveAuthResult,
+} from './login';
 import { promptText, promptPassword } from '../lib/prompts';
 import { CliError, ErrorKind, ExitCode, Errors, classifyError } from '../lib/errors';
 import { API_BASE } from '../lib/api-client';
@@ -21,20 +27,19 @@ export async function register(
     return login({ phone: true, intent: 'signup', json: options.json, quiet: options.quiet }, root);
   }
 
-  const envEmail = process.env.NUMO_LOGIN_EMAIL;
-  const envPassword = process.env.NUMO_LOGIN_PASSWORD;
-  const hasEnvCreds = !!(envEmail && envPassword);
+  const envCreds = readEnvCredentials();
   const quietMode = isQuietMode(options);
 
-  if (quietMode && !hasEnvCreds) {
+  if (quietMode && !envCreds) {
     outputError(Errors.configMissing('NUMO_LOGIN_EMAIL and NUMO_LOGIN_PASSWORD'), true);
   }
 
   const p = await import('@clack/prompts');
   if (!quietMode) p.intro(pc.bold('Numo — Create account'));
 
-  const email = hasEnvCreds ? envEmail! : await promptText({ message: 'Email', required: true });
-  const password = hasEnvCreds ? envPassword! : await promptPassword({ message: 'Password (at least 6 characters)' });
+  const email = envCreds?.email ?? (await promptText({ message: 'Email', required: true }));
+  const password =
+    envCreds?.password ?? (await promptPassword({ message: 'Password (at least 6 characters)' }));
 
   const s = await makeClackSpinner(quietMode);
 
@@ -85,13 +90,7 @@ export async function register(
       );
     });
 
-    saveCredentials({
-      refreshToken: result.refreshToken,
-      uid: result.uid,
-      email: result.displayName,
-      idToken: result.idToken,
-      idTokenExpiry: result.idTokenExpiry,
-    });
+    saveAuthResult(result);
 
     // Read the flag rather than assuming it: registering an address that already
     // exists, with its own password, signs into an account that may well be
@@ -138,12 +137,12 @@ export async function register(
         })
       : classified;
 
-    if (quietMode) outputError(reported, true);
-
-    s.stop(pc.red(sessionOnly ? 'Account created, but signing in failed' : 'Could not create the account'));
-    p.log.error(reported.message);
-    if (reported.options.suggestion) p.log.info(`Try: ${reported.options.suggestion}`);
-    if (reported.options.hint) p.log.warning(reported.options.hint);
-    process.exit(reported.exitCode);
+    await reportAuthFailure(reported, {
+      spinner: s,
+      quietMode,
+      stopMessage: sessionOnly
+        ? 'Account created, but signing in failed'
+        : 'Could not create the account',
+    });
   }
 }
