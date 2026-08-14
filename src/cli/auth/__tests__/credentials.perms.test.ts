@@ -77,3 +77,76 @@ describe('credentials file permissions (I-7)', () => {
     expect(loadCredentials()).toBeNull();
   });
 });
+
+describe('loadCredentials on a file it did not write', () => {
+  beforeEach(() => {
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'numo-load-'));
+    process.env.NUMO_CONFIG_DIR = path.join(tmp, 'cfg');
+    fs.mkdirSync(process.env.NUMO_CONFIG_DIR, { recursive: true, mode: 0o700 });
+  });
+
+  afterEach(() => {
+    process.env = { ...env };
+    fs.rmSync(tmp, { recursive: true, force: true });
+    vi.resetModules();
+  });
+
+  function writeRaw(contents: string, mode = 0o600) {
+    const file = path.join(process.env.NUMO_CONFIG_DIR!, 'credentials.json');
+    fs.writeFileSync(file, contents, { mode });
+    fs.chmodSync(file, mode);
+    return file;
+  }
+
+  // Contract: anything that is not a usable profile reads as "not logged in". A truncated
+  // write, a half-synced file or a hand-edited one would otherwise flow onward as a
+  // Credentials object and fail somewhere further in, with a message about the wrong thing.
+  it.each([
+    ['truncated JSON', '{"refreshToken":"rt","uid"'],
+    ['an empty file', ''],
+    ['a JSON value that is not an object', '"just a string"'],
+    ['a profile missing its refresh token', '{"uid":"u1","email":"a@b.com"}'],
+    ['a profile whose uid is not a string', '{"refreshToken":"rt","uid":42,"email":"a@b.com"}'],
+  ])('reads %s as no credentials at all', async (_case, contents) => {
+    writeRaw(contents);
+    const { loadCredentials } = await import('../credentials');
+
+    expect(loadCredentials()).toBeNull();
+  });
+
+  // Liveness: a well-formed profile does load, or the rule above would be satisfied by a
+  // reader that returns null for everything.
+  it('reads a well-formed profile', async () => {
+    writeRaw(JSON.stringify(CREDS));
+    const { loadCredentials } = await import('../credentials');
+
+    expect(loadCredentials()).toMatchObject({ refreshToken: 'rt', uid: 'u1' });
+  });
+
+  // I-7 from the reading side: the four cases above cover the routes that write the file,
+  // and none of them can see a file that went loose afterwards. Telling the user is all
+  // the CLI can do about it, so it has to actually do it.
+  it.skipIf(!onPosix)('warns when the file it is reading is group- or other-readable', async () => {
+    writeRaw(JSON.stringify(CREDS), 0o644);
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+    const { loadCredentials } = await import('../credentials');
+    loadCredentials();
+
+    const written = stderr.mock.calls.map(([chunk]) => String(chunk)).join('');
+    stderr.mockRestore();
+    expect(written).toContain('chmod 600');
+  });
+
+  it.skipIf(!onPosix)('says nothing about a file that is already tight', async () => {
+    writeRaw(JSON.stringify(CREDS), 0o600);
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+    const { loadCredentials } = await import('../credentials');
+    loadCredentials();
+
+    const written = stderr.mock.calls.map(([chunk]) => String(chunk)).join('');
+    stderr.mockRestore();
+    expect(written).toBe('');
+  });
+});

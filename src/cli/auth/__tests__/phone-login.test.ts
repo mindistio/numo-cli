@@ -75,4 +75,41 @@ describe('authenticateWithPhone', () => {
     expect(urls.length).toBeGreaterThan(3); // the retries actually happened
     for (const url of urls) expect(url).not.toContain('secret-abc');
   });
+
+  // Contract: the number is checked here, before it is sent. A malformed one would
+  // otherwise start a session that can never be confirmed, and the user waits out the
+  // full poll window to find that out.
+  it('refuses a number that is not E.164 without starting a session', async () => {
+    const { promptText } = await import('../../lib/prompts');
+    const { http } = await import('../../lib/http');
+    vi.mocked(promptText).mockResolvedValueOnce('0501234567');
+
+    const { authenticateWithPhone } = await import('../phone-login');
+
+    await expect(authenticateWithPhone({ start: vi.fn(), stop: vi.fn() }))
+      .rejects.toMatchObject({ kind: 'INVALID_INPUT' });
+    expect(http.post).not.toHaveBeenCalled();
+  });
+
+  // Contract: a session the server no longer has is reported, not waited on. Treating it
+  // like any other poll error means polling a dead session for the rest of the window and
+  // then reporting a timeout, which points the user at the wrong problem.
+  it('stops as soon as the session is gone rather than polling out the window', async () => {
+    const { http } = await import('../../lib/http');
+    vi.mocked(http.post).mockResolvedValueOnce({
+      data: { sessionId: 'sess-3', pollSecret: 's', userCode: 'PAIR00', verifyUrl: 'http://localhost:3000/v' },
+    } as never);
+    vi.mocked(http.get).mockRejectedValue(Object.assign(new Error('gone'), { response: { status: 404 } }));
+
+    const { authenticateWithPhone } = await import('../phone-login');
+
+    vi.useFakeTimers();
+    const promise = authenticateWithPhone({ start: vi.fn(), stop: vi.fn() });
+    const outcome = expect(promise).rejects.toThrow(/session expired/i);
+    await vi.advanceTimersByTimeAsync(6000);
+    await outcome;
+
+    // One poll, not a window's worth: the point is that it stopped.
+    expect(vi.mocked(http.get).mock.calls.length).toBe(1);
+  });
 });

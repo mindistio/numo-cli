@@ -103,4 +103,28 @@ describe('login (non-interactive env-vars path)', () => {
       .find((parsed: { error?: unknown } | null) => parsed?.error);
     expect(envelope?.error).toMatchObject({ kind: 'CONFIG_ERROR', code: 78 });
   });
+
+  // Contract: --phone is refused up front without a terminal. The flow it starts ends in
+  // an OTP prompt, so accepting it in a script or a CI job buys a request to the server
+  // and then a wait for input that will never arrive.
+  it('refuses --phone when there is no terminal to type the code into', async () => {
+    delete process.env.NUMO_LOGIN_EMAIL;
+    delete process.env.NUMO_LOGIN_PASSWORD;
+
+    const { http } = await import('../../lib/http');
+    const { promptText } = await import('../../lib/prompts');
+    const { login } = await import('../login');
+
+    await expect(login({ phone: true, json: true })).rejects.toThrow(/__test_exit__/);
+
+    // Not reaching the prompt is what separates this refusal from the one further in.
+    // Without it the phone flow runs, asks for a number, and rejects the empty answer with
+    // the same kind — so the test passed with the refusal deleted.
+    expect(promptText).not.toHaveBeenCalled();
+    expect(http.post).not.toHaveBeenCalled();
+    const envelope = consoleErrorSpy.mock.calls
+      .map(([first]: unknown[]) => { try { return JSON.parse(String(first)); } catch { return null; } })
+      .find((parsed: { error?: unknown } | null) => parsed?.error);
+    expect(envelope?.error).toMatchObject({ kind: 'INVALID_INPUT' });
+  });
 });

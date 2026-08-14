@@ -1,6 +1,6 @@
 import { http } from '../lib/http';
 import pc from 'picocolors';
-import { Errors } from '../lib/errors';
+import { Errors, CliError, ErrorKind, ExitCode } from '../lib/errors';
 import { promptText } from '../lib/prompts';
 import { API_BASE } from '../lib/api-client';
 import { assertSafeApiBase } from '../lib/api-base';
@@ -64,9 +64,13 @@ export async function authenticateWithPhone(spinner: { start: (msg?: string) => 
       }
       // 202 = still pending, continue polling
     } catch (err: any) {
-      // 404 = session expired/not found
+      // A session the server no longer has cannot be waited out. Reported as what it is:
+      // Errors.networkError takes its argument as a hint, so this used to surface as
+      // "Can't reach Numo servers" — retryable, and pointing at the wrong thing entirely.
       if (err.response?.status === 404) {
-        throw Errors.networkError('Verification session expired. Try again.');
+        throw new CliError(ErrorKind.NOT_FOUND, 'Verification session expired. Start again.', ExitCode.NOT_FOUND, {
+          suggestion: 'numo login --phone',
+        });
       }
       // Other errors — continue polling
     }
