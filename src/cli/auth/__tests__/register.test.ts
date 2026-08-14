@@ -146,7 +146,11 @@ describe('numo register', () => {
   // which is what the network case looks like, and asserted it WAS CONFLICT. So the
   // suite pinned the defect — someone whose account had just been created was told it
   // already existed, given exit 101, and had their credentials discarded.
+  // 400 is in the table on purpose: it is the neighbour of the one status that DOES
+  // mean "taken". numo-api answers every credential refusal with 401; its only 400 from
+  // login is INVALID_EMAIL — the address is malformed, not held by someone else.
   it.each([
+    [400, 'INVALID_INPUT', ExitCode.USAGE],
     [429, 'RATE_LIMITED', ExitCode.TEMP_FAIL],
     [503, 'SERVICE_UNAVAILABLE', ExitCode.UNAVAILABLE],
   ])('reports a %i between register and sign-in as itself', async (status, kind, code) => {

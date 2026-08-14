@@ -54,9 +54,14 @@ export async function register(
     // someone who did sign up that they did not, exits 101, and discards the
     // credentials they now have. Anything that is not an auth refusal goes to
     // `classifyError` below and is reported as itself.
+    //
+    // 401 exactly. numo-api answers every credential refusal — INVALID_LOGIN_CREDENTIALS,
+    // INVALID_PASSWORD, EMAIL_NOT_FOUND — with AUTH_REQUIRED (services/firebase-auth.ts).
+    // Its only 400 from this route is INVALID_EMAIL, which says the address is malformed,
+    // not that someone else holds it.
     const result = await postLogin(email, password).catch((err: unknown) => {
       const status = (err as { response?: { status?: number } })?.response?.status;
-      if (status !== 400 && status !== 401) throw err;
+      if (status !== 401) throw err;
       throw new CliError(
         ErrorKind.CONFLICT,
         'That address is already registered, and the password does not match it.',
