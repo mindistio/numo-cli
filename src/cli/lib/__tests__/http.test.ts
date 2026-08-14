@@ -65,6 +65,34 @@ describe('http retries', () => {
     expect(error.response.status).toBe(status);
   });
 
+  // Contract: a caller can opt out, because the retry loop cannot tell a request that
+  // never arrived from a response that was lost coming back. For a call that mints
+  // something on receipt, that difference is the whole story — see auth/phone-login.ts,
+  // where the retry met the 30-second cooldown its own first attempt had armed, and
+  // turned a first login attempt into "wait 29 seconds".
+  //
+  // Paired with the bound above on purpose: an opt-out test alone would pass on a
+  // build that never retried anything.
+  it.each([429, 502, 503])(
+    'sends a %i exactly once when the caller asks for no retries',
+    async (status) => {
+      fetchMock.mockResolvedValue(failure(status));
+
+      const { error } = await settle(http.post('http://x/y', { a: 1 }, { retries: 0 }));
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(error.response.status).toBe(status);
+    },
+  );
+
+  it('still retries a POST that did not ask to opt out', async () => {
+    fetchMock.mockResolvedValue(failure(503));
+
+    await settle(http.post('http://x/y', { a: 1 }));
+
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
   it('stops retrying as soon as a retry succeeds', async () => {
     fetchMock
       .mockResolvedValueOnce(failure(503))

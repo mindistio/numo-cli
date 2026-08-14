@@ -124,6 +124,34 @@ describe('authenticateWithPhone', () => {
     });
   });
 
+  // Contract: /phone/start is sent once. The mechanism IS the promise here, so the
+  // option is asserted rather than an outcome: receiving this call mints a session, an
+  // SMS allowance and a 30-second per-number cooldown (numo-api phone-sessions.ts), and
+  // http cannot tell a request that never arrived from a response lost coming back. So
+  // a retry after an edge 502 met the cooldown its own first attempt had armed, got 429
+  // with retryAfter ≈ 29 — itself retryable — and slept it out twice more. About a
+  // minute of waiting ending in "Too many requests, wait 29 seconds", on a first login,
+  // with a live unused session sitting on the server.
+  it('does not let http retry the call that mints the session', async () => {
+    const { http } = await import('../../lib/http');
+    vi.mocked(http.post).mockResolvedValueOnce({
+      data: { sessionId: 's', pollSecret: 's', userCode: 'PAIR00', verifyUrl: 'http://localhost:3000/v' },
+    } as never);
+    vi.mocked(http.get).mockRejectedValue(
+      Object.assign(new Error('gone'), { response: { status: 404 } })
+    );
+
+    const { authenticateWithPhone } = await import('../phone-login');
+    vi.useFakeTimers();
+    const promise = authenticateWithPhone({ start: vi.fn(), stop: vi.fn() }).catch(() => {});
+    await vi.advanceTimersByTimeAsync(2000);
+    await promise;
+
+    const [url, , opts] = vi.mocked(http.post).mock.calls[0];
+    expect(String(url)).toContain('/api/auth/phone/start');
+    expect(opts).toMatchObject({ retries: 0 });
+  });
+
   // Contract: those two mappings belong to the intent that was sent, and to nothing
   // else. numo-api throws 409 only for `signup` and 404 only for `login`
   // (routes/auth.ts), so the mismatched pairs below cannot have come from the gate — a
