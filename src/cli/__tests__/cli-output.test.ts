@@ -277,3 +277,57 @@ describe('argument-parsing failures', () => {
     }
   });
 });
+
+/**
+ * Bare `numo`, run by someone with no account.
+ *
+ * The one user-facing behaviour this branch added that had no test at all: a grep for
+ * its message found exactly one hit, the source line. It also runs at module top level,
+ * before Commander parses anything, so it is only observable from outside the process —
+ * hence the subprocess, as everywhere else in this file.
+ */
+describe('bare `numo` with no way to authenticate', () => {
+  const noAccount = () => ({ NUMO_CONFIG_DIR: configDir(), NUMO_TOKEN: '' });
+
+  // Contract: name the two ways to get an account, and exit NO_PERM. Every command below
+  // it needs one, so a wall of them is a worse answer than the two that work — and the
+  // exit code is what lets a script tell "not signed in" from "you typed it wrong".
+  it('names both ways in, and exits NO_PERM', () => {
+    const { status, stderr } = runMayFail('', noAccount());
+
+    expect(status).toBe(77);
+    expect(stderr).toMatch(/numo register/);
+    expect(stderr).toMatch(/numo login/);
+  });
+
+  // Contract: it starts nothing. Auto-launching a login prompt is hostile in a script
+  // and hangs in CI, which is the reason this refuses rather than helps.
+  it('leaves stdout empty rather than opening a flow', () => {
+    const { stdout } = runMayFail('', noAccount());
+
+    expect(stdout).toBe('');
+  });
+
+  // Liveness, and the answer to whether the behaviour is defensible at all: `--help` is
+  // not intercepted, so someone with no account can still read what the tool does.
+  // Without this row, "refuse everything" would satisfy the contract above.
+  it('still shows --help to someone with no account', () => {
+    const { status, stdout } = runMayFail('--help', noAccount());
+
+    expect(status).toBe(0);
+    expect(stdout).toMatch(/Commands:/);
+  });
+
+  // The other liveness half: with credentials the intercept does not fire at all, and
+  // bare `numo` is an ordinary missing-subcommand. A rule that always fired would pass
+  // the first case and refuse every signed-in user.
+  it('does not fire for someone who is signed in', () => {
+    const { status, stderr } = runMayFail('', {
+      NUMO_CONFIG_DIR: configDir(true),
+      NUMO_TOKEN: '',
+    });
+
+    expect(status).not.toBe(77);
+    expect(stderr).not.toMatch(/Not signed in/);
+  });
+});
