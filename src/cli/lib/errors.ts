@@ -179,7 +179,17 @@ export function classifyError(err: unknown): CliError {
 
   if (httpErr.code === 'ECONNABORTED' || httpErr.code === 'ETIMEDOUT') return Errors.timeout();
   if (httpErr.code === 'ENOTFOUND' || httpErr.code === 'EAI_AGAIN') return Errors.networkError();
-  if (httpErr.code === 'ECONNREFUSED' || httpErr.code === 'ECONNRESET') {
+  // Split, because they mean different things and the reader can act on only one of
+  // them. ECONNREFUSED is "the host answered, and nothing is listening on that port" —
+  // for anyone pointing NUMO_API_URL at their own deployment or a localhost port, that
+  // is the whole diagnosis, and telling them the service is down sends them to wait for
+  // a service that is running fine somewhere else. The deleted `toCliError` said so;
+  // folding both codes into one hint lost it.
+  if (httpErr.code === 'ECONNREFUSED') {
+    return Errors.networkError('Nothing is listening at NUMO_API_URL — check the address, or the service may be down.');
+  }
+  // A connection that was established and then dropped. Nothing to check; try again.
+  if (httpErr.code === 'ECONNRESET') {
     return Errors.networkError('Service may be temporarily down. Try again in a moment.');
   }
 

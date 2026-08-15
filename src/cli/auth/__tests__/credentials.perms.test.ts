@@ -150,3 +150,60 @@ describe('loadCredentials on a file it did not write', () => {
     expect(written).toBe('');
   });
 });
+
+describe('clearCredentials — what logout promises', () => {
+  beforeEach(() => {
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'numo-logout-'));
+    process.env.NUMO_CONFIG_DIR = path.join(tmp, 'cfg');
+  });
+
+  afterEach(() => {
+    process.env = { ...env };
+    // The permission case leaves the directory unwritable, which rmSync cannot get past.
+    const cfg = path.join(tmp, 'cfg');
+    if (fs.existsSync(cfg)) fs.chmodSync(cfg, 0o700);
+    fs.rmSync(tmp, { recursive: true, force: true });
+    vi.resetModules();
+  });
+
+  // Contract: after this returns, the refresh token is gone from disk — overwritten
+  // before unlinking, so it is not left readable in freed blocks.
+  it('overwrites and removes the file', async () => {
+    const { saveCredentials, clearCredentials } = await import('../credentials');
+    saveCredentials(CREDS);
+    const file = path.join(process.env.NUMO_CONFIG_DIR!, 'credentials.json');
+
+    clearCredentials();
+
+    expect(fs.existsSync(file)).toBe(false);
+  });
+
+  // Contract: nothing to remove is success. `numo logout` when you were never logged in
+  // is not an error, and this is also the ENOENT half of dropping the existsSync check —
+  // the file could always have gone away between that check and the stat.
+  it('is quiet when there is no file', async () => {
+    const { clearCredentials } = await import('../credentials');
+
+    expect(() => clearCredentials()).not.toThrow();
+  });
+
+  // Contract: a removal it could NOT do is reported, and names the file.
+  //
+  // Two failures met here. `origin/main` swallowed everything, so logout printed
+  // "Logged out." while a live refresh token stayed readable on disk — the one sentence
+  // a user acts on by walking away from the machine. This branch removed the catch
+  // instead, which surfaced a raw EACCES: exit 1, a stack trace, and no path in it.
+  it.skipIf(!onPosix || process.getuid?.() === 0)(
+    'refuses to claim a logout it could not perform',
+    async () => {
+      const { saveCredentials, clearCredentials } = await import('../credentials');
+      saveCredentials(CREDS);
+      const dir = process.env.NUMO_CONFIG_DIR!;
+      // Read+execute only: the file survives, but it cannot be rewritten or unlinked.
+      fs.chmodSync(dir, 0o500);
+
+      expect(() => clearCredentials()).toThrow(/Could not remove the stored credentials/);
+      expect(fs.existsSync(path.join(dir, 'credentials.json'))).toBe(true);
+    }
+  );
+});

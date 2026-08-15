@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as crypto from 'crypto';
 import { ensureConfigDir, getCredentialsPath } from '../lib/dirs';
 import { assertSafeApiBase } from '../lib/api-base';
-import { Errors } from '../lib/errors';
+import { CliError, ErrorKind, Errors, ExitCode } from '../lib/errors';
 
 interface Credentials {
   refreshToken: string;
@@ -40,12 +40,36 @@ export function saveCredentials(creds: Credentials) {
   if (process.platform !== 'win32') fs.chmodSync(path, 0o600);
 }
 
+/**
+ * Remove the stored credentials, overwriting them first so the refresh token is not
+ * left behind in freed blocks.
+ *
+ * No `existsSync` guard: the file can go away between that check and the stat, and
+ * "there is nothing to remove" is already the ENOENT case below. Asking the same
+ * question twice is one of the two answers being wrong under a race.
+ *
+ * Anything else is reported. `origin/main` swallowed every failure, and a logout that
+ * says "Logged out." while a live refresh token is still readable on disk is worse than
+ * an error — it is the one sentence a user acts on by walking away. This branch went the
+ * other way and let a raw EACCES out, which exits 1 with a stack trace and no path in it.
+ * Neither is the answer; naming the file and what is still true is.
+ */
 export function clearCredentials() {
   const credPath = getCredentialsPath();
-  if (!fs.existsSync(credPath)) return;
-  // Overwrite before unlinking so the refresh token is not left in freed blocks.
-  fs.writeFileSync(credPath, crypto.randomBytes(fs.statSync(credPath).size));
-  fs.unlinkSync(credPath);
+  try {
+    fs.writeFileSync(credPath, crypto.randomBytes(fs.statSync(credPath).size));
+    fs.unlinkSync(credPath);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return;
+    throw new CliError(
+      ErrorKind.INTERNAL,
+      `Could not remove the stored credentials at ${credPath}`,
+      ExitCode.GENERAL,
+      {
+        hint: 'They are still there and still valid. Delete the file yourself, or fix its permissions and run `numo logout` again.',
+      },
+    );
+  }
 }
 
 // Promise lock to prevent concurrent token refreshes

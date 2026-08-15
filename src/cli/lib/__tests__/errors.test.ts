@@ -33,6 +33,26 @@ describe('classifyError — status table', () => {
     expect(classifyError({ code: 'ECONNABORTED' }).kind).toBe(ErrorKind.TIMEOUT);
   });
 
+  // Contract: a refused connection names the address, because that is the only one of
+  // these the reader can act on. ECONNREFUSED means the host answered and nothing is
+  // listening there — for anyone pointing NUMO_API_URL at their own deployment or a
+  // local port, that is the whole diagnosis. Telling them the service is down sends
+  // them to wait for one that is running fine somewhere else. The deleted `toCliError`
+  // said this; folding the two codes into one hint lost it.
+  it('points a refused connection at NUMO_API_URL', () => {
+    expect(classifyError({ code: 'ECONNREFUSED' }).options.hint).toMatch(/NUMO_API_URL/);
+  });
+
+  // ...and a dropped one does not, because there is nothing there to check. Without
+  // this row, "put the URL in every network hint" would satisfy the case above and
+  // send someone whose connection was reset to go and audit a correct address.
+  it.each([['ECONNRESET'], ['ENOTFOUND'], ['ECONNABORTED']])(
+    'does not send a %s to check the address',
+    (code) => {
+      expect(classifyError({ code }).options.hint ?? '').not.toMatch(/NUMO_API_URL/);
+    }
+  );
+
   it('passes a CliError through untouched', () => {
     const original = new CliError(ErrorKind.CONFLICT, 'already there', ExitCode.CONFLICT);
     expect(classifyError(original)).toBe(original);
