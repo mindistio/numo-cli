@@ -6,6 +6,7 @@ import * as path from 'path';
 vi.mock('../../lib/http', () => ({ http: { post: vi.fn() } }));
 
 import { http } from '../../lib/http';
+import { ErrorKind } from '../../lib/errors';
 
 const env = { ...process.env };
 let tmp: string;
@@ -96,5 +97,30 @@ describe('getIdToken — refresh', () => {
     expect(await getIdToken()).toBe('env-token');
     expect(http.post).not.toHaveBeenCalled();
     expect(savedCredentials().idToken).toBe('cached');
+  });
+
+  // Contract: with neither NUMO_TOKEN nor a credentials file, this refuses with
+  // AUTH_REQUIRED and sends nothing. It is the gate every command actually runs — the
+  // `requireAuth()` calls sitting above some of them re-state the same rule, and
+  // verify-email's was removed once it turned out its test held nothing.
+  //
+  // Sending nothing is half the contract: reaching numo-api without a bearer token
+  // spends a rate-limit slot and comes back with the API's word for the problem
+  // instead of "you are not logged in".
+  it('refuses with AUTH_REQUIRED when there is nothing to authenticate with', async () => {
+    // NUMO_CONFIG_DIR points at a directory that was never created.
+    const { getIdToken } = await import('../credentials');
+
+    await expect(getIdToken()).rejects.toMatchObject({ kind: ErrorKind.AUTH_REQUIRED });
+    expect(http.post).not.toHaveBeenCalled();
+  });
+
+  // Liveness for the row above: a file that IS there authenticates. Without it,
+  // "always refuses" would satisfy the refusal and lock every user out.
+  it('authenticates from the stored file when one is there', async () => {
+    storedCredentials(Date.now() + 60 * 60 * 1000);
+    const { getIdToken } = await import('../credentials');
+
+    await expect(getIdToken()).resolves.toBe('cached');
   });
 });

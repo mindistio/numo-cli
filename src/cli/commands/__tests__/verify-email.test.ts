@@ -6,17 +6,14 @@ vi.mock('../../services/me', () => ({
   resendVerificationEmail: vi.fn(),
   confirmVerificationCode: vi.fn(),
 }));
-vi.mock('../../lib/uid', () => ({ requireAuth: vi.fn() }));
 
 import { registerVerifyEmailCommand } from '../verify-email';
 import { getMe, resendVerificationEmail, confirmVerificationCode } from '../../services/me';
-import { requireAuth } from '../../lib/uid';
 
 const mocked = {
   getMe: vi.mocked(getMe),
   resend: vi.mocked(resendVerificationEmail),
   confirm: vi.mocked(confirmVerificationCode),
-  requireAuth: vi.mocked(requireAuth),
 };
 
 function run(args: string[]) {
@@ -33,14 +30,12 @@ describe('numo verify-email', () => {
     mocked.confirm.mockResolvedValue({ status: 'ok', emailVerified: true });
   });
 
-  // Contract: refuse before the network, so an unauthenticated caller gets
-  // AUTH_REQUIRED and not whatever the API says about a missing bearer token.
-  it('requires credentials before making any request', async () => {
-    mocked.requireAuth.mockImplementationOnce(() => { throw new Error('not logged in'); });
-    await expect(run([])).rejects.toThrow('not logged in');
-    expect(mocked.getMe).not.toHaveBeenCalled();
-    expect(mocked.resend).not.toHaveBeenCalled();
-  });
+  // The "requires credentials before making any request" case that stood here mocked
+  // BOTH the services and lib/uid, so it asserted that a stubbed requireAuth throwing
+  // stops stubbed services from being called — true of any build with that line, and of
+  // no other fact. The rule it named is real and lives one layer down, in getIdToken;
+  // it is now asserted there, against a config dir with no credentials in it, where the
+  // gate the command actually runs is the one under test.
 
   it('resends the email when no code is given', async () => {
     await run([]);

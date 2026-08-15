@@ -1,6 +1,5 @@
 import { Command } from 'commander';
 import pc from 'picocolors';
-import { requireAuth } from '../lib/uid';
 import { isQuietMode } from '../lib/quiet';
 import { printJson } from '../lib/output';
 import { confirmVerificationCode, getMe, resendVerificationEmail } from '../services/me';
@@ -20,7 +19,12 @@ Reading it needs access to the inbox, not a browser.`)
     .action(async function (this: Command) {
       const opts = this.optsWithGlobals();
       const asJson = isQuietMode(opts);
-      requireAuth();
+      // No requireAuth() here. Every branch below goes through api.* → apiHeaders() →
+      // getIdToken(), which encodes the same rule (NUMO_TOKEN or the stored file) and
+      // throws the same authRequired before a socket is opened. Unlike posts.ts, where
+      // the gate legitimately runs BEFORE promptForMissing, there is nothing here it
+      // could protect. Its test was green only because the suite mocked the services
+      // out, which took the real gate with them.
 
       if (opts.code) {
         // Report what the server said, not what we hoped. `emailVerified: true` was a
