@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Command } from 'commander';
+import * as fsSync from 'fs';
 
 vi.mock('../../lib/api-client', () => ({ API_BASE: 'https://api.numo.ai' }));
 vi.mock('../../lib/api-base', () => ({ classifyApiBase: vi.fn(() => ({ ok: true, insecure: false })) }));
@@ -235,5 +236,26 @@ describe('numo doctor', () => {
     const { report, exited } = await doctor();
     expect(report.exitCode).toBe(1);
     expect(exited).toBe(1);
+  });
+});
+
+// Contract: the Node floor is one number, written in four places — package.json
+// engines.node, build.mjs's esbuild target, the CI matrix, and doctor's own check.
+//
+// Only this one is ever shown to a user, and it is the one that stayed at 18 while the
+// other three moved to 22: `numo doctor` answered "all checks passed" on a runtime that
+// `npm i -g numo` refuses, on exactly the run where someone is diagnosing a bad install.
+//
+// Asserted against the manifest rather than against a literal, because a literal here
+// would be a fifth copy of the same number. Changing the constant alone cannot be caught
+// by running the check — CI runs a Node that satisfies both the old floor and the new.
+describe('the Node floor doctor reports', () => {
+  it('is the floor package.json promises', async () => {
+    const { MIN_NODE_MAJOR } = await import('../doctor');
+    const pkg = JSON.parse(
+      fsSync.readFileSync(new URL('../../../../package.json', import.meta.url), 'utf8'),
+    );
+
+    expect(pkg.engines?.node).toBe(`>=${MIN_NODE_MAJOR}`);
   });
 });

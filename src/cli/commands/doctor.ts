@@ -12,6 +12,15 @@ import { SYM } from '../lib/symbols';
 import { sanitizeErrorMessage } from '../lib/errors';
 import { getMe } from '../services/me';
 
+/**
+ * The floor this package supports, and the fourth place it is written down —
+ * package.json engines.node, build.mjs's esbuild target, and the CI matrix are the
+ * others. This one is the only one a USER ever sees, and it is the one that stayed at
+ * 18 when the rest moved: `numo doctor` reported "all checks passed" on a Node that
+ * `npm i -g numo` refuses, which is the run where a broken install is being diagnosed.
+ */
+export const MIN_NODE_MAJOR = 22;
+
 interface CheckResult {
   name: string;
   status: 'ok' | 'warn' | 'fail';
@@ -61,11 +70,13 @@ async function runChecks(): Promise<CheckResult[]> {
   const checks: CheckResult[] = [];
 
   const nodeVersion = process.version;
-  const major = parseInt(nodeVersion.slice(1), 10);
+  const supported = parseInt(nodeVersion.slice(1), 10) >= MIN_NODE_MAJOR;
   checks.push({
     name: 'node_version',
-    status: major >= 18 ? 'ok' : 'fail',
-    message: major >= 18 ? `Node ${nodeVersion}` : `Node ${nodeVersion} — requires >= 18`,
+    status: supported ? 'ok' : 'fail',
+    message: supported
+      ? `Node ${nodeVersion}`
+      : `Node ${nodeVersion} — requires >= ${MIN_NODE_MAJOR}`,
   });
 
   const verdict = classifyApiBase();

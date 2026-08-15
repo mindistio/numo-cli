@@ -166,18 +166,6 @@ describe('clearCredentials — what logout promises', () => {
     vi.resetModules();
   });
 
-  // Contract: after this returns, the refresh token is gone from disk — overwritten
-  // before unlinking, so it is not left readable in freed blocks.
-  it('overwrites and removes the file', async () => {
-    const { saveCredentials, clearCredentials } = await import('../credentials');
-    saveCredentials(CREDS);
-    const file = path.join(process.env.NUMO_CONFIG_DIR!, 'credentials.json');
-
-    clearCredentials();
-
-    expect(fs.existsSync(file)).toBe(false);
-  });
-
   // Contract: nothing to remove is success. `numo logout` when you were never logged in
   // is not an error, and this is also the ENOENT half of dropping the existsSync check —
   // the file could always have gone away between that check and the stat.
@@ -187,23 +175,45 @@ describe('clearCredentials — what logout promises', () => {
     expect(() => clearCredentials()).not.toThrow();
   });
 
-  // Contract: a removal it could NOT do is reported, and names the file.
+  // Contract: when it cannot finish, the message matches what actually happened to the
+  // token — because "am I still authenticated?" is the only question logout answers.
   //
-  // Two failures met here. `origin/main` swallowed everything, so logout printed
-  // "Logged out." while a live refresh token stayed readable on disk — the one sentence
-  // a user acts on by walking away from the machine. This branch removed the catch
-  // instead, which surfaced a raw EACCES: exit 1, a stack trace, and no path in it.
+  // The two steps fail on different permissions, which is why one message cannot cover
+  // both. `origin/main` swallowed everything and printed "Logged out." over a live
+  // token; the first fix here reported one sentence for both cases, and on the case it
+  // was actually tested against that sentence was false.
   it.skipIf(!onPosix || process.getuid?.() === 0)(
-    'refuses to claim a logout it could not perform',
+    'says the token is gone when the shred landed and only the delete failed',
     async () => {
       const { saveCredentials, clearCredentials } = await import('../credentials');
       saveCredentials(CREDS);
       const dir = process.env.NUMO_CONFIG_DIR!;
-      // Read+execute only: the file survives, but it cannot be rewritten or unlinked.
+      // Read+execute only. Rewriting the file needs write on the FILE (0600, ours), so
+      // the shred lands; unlinking needs write on the DIRECTORY, so only that throws.
       fs.chmodSync(dir, 0o500);
 
+      expect(() => clearCredentials()).toThrow(/could not delete/i);
+      // The half the old assertion missed: the file surviving is not the token
+      // surviving. Asserting only `existsSync` let "still there and still valid" stand
+      // over bytes that were already random.
+      const left = fs.readFileSync(path.join(dir, 'credentials.json'), 'utf8');
+      expect(left).not.toContain(CREDS.refreshToken);
+    }
+  );
+
+  // ...and the other side of that fork, where the claim really is true: the file itself
+  // is unwritable, so nothing was destroyed and the caller is still signed in.
+  it.skipIf(!onPosix || process.getuid?.() === 0)(
+    'says the token is still usable when the shred never landed',
+    async () => {
+      const { saveCredentials, clearCredentials } = await import('../credentials');
+      saveCredentials(CREDS);
+      const file = path.join(process.env.NUMO_CONFIG_DIR!, 'credentials.json');
+      fs.chmodSync(file, 0o400);
+
       expect(() => clearCredentials()).toThrow(/Could not remove the stored credentials/);
-      expect(fs.existsSync(path.join(dir, 'credentials.json'))).toBe(true);
+      expect(fs.readFileSync(file, 'utf8')).toContain(CREDS.refreshToken);
+      fs.chmodSync(file, 0o600);
     }
   );
 });

@@ -69,7 +69,9 @@ export async function reportAuthFailure(
   opts: { spinner: ClackSpinner; quietMode: boolean; stopMessage: string },
 ): Promise<never> {
   const p = await import('@clack/prompts');
-  if (opts.quietMode) outputError(reported, true);
+  //  — returned, not just called, so the control flow is on the page instead of
+  // five unreachable lines below it.
+  if (opts.quietMode) return outputError(reported, true);
   opts.spinner.stop(pc.red(opts.stopMessage));
   p.log.error(reported.message);
   if (reported.options.suggestion) p.log.info(`Try: ${reported.options.suggestion}`);
@@ -108,7 +110,6 @@ export async function login(
   const intent = options.intent ?? 'login';
   const signingUp = intent === 'signup';
   const envCreds = readEnvCredentials();
-  const hasEnvCreds = !!envCreds;
   const quietMode = isQuietMode(options);
 
   // Non-interactive mode without env-creds and without --phone has no way to collect input
@@ -121,7 +122,7 @@ export async function login(
       true,
     );
   }
-  if (quietMode && !hasEnvCreds && !options.phone) {
+  if (quietMode && !envCreds && !options.phone) {
     outputError(
       Errors.configMissing('NUMO_LOGIN_EMAIL and NUMO_LOGIN_PASSWORD'),
       true,
@@ -133,7 +134,7 @@ export async function login(
 
   let method: 'email' | 'phone' = options.phone ? 'phone' : 'email';
 
-  if (!options.phone && !hasEnvCreds && !quietMode) {
+  if (!options.phone && !envCreds && !quietMode) {
     method = await promptSelect({
       message: 'How would you like to sign in?',
       options: [
@@ -151,7 +152,7 @@ export async function login(
     if (method === 'phone') {
       const { authenticateWithPhone } = await import('./phone-login');
       result = await authenticateWithPhone(s, intent);
-    } else if (hasEnvCreds) {
+    } else if (envCreds) {
       s.start('Signing in...');
       result = await postLogin(envCreds.email, envCreds.password);
     } else {

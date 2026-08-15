@@ -48,25 +48,32 @@ export function saveCredentials(creds: Credentials) {
  * "there is nothing to remove" is already the ENOENT case below. Asking the same
  * question twice is one of the two answers being wrong under a race.
  *
- * Anything else is reported. `origin/main` swallowed every failure, and a logout that
- * says "Logged out." while a live refresh token is still readable on disk is worse than
- * an error — it is the one sentence a user acts on by walking away. This branch went the
- * other way and let a raw EACCES out, which exits 1 with a stack trace and no path in it.
- * Neither is the answer; naming the file and what is still true is.
+ * The two steps fail on DIFFERENT permissions, and the difference is the whole message.
+ * Writing to an existing file needs write on the FILE (0600, ours); unlinking needs
+ * write on the DIRECTORY. So under a read-only directory the shred lands and only the
+ * unlink throws — the token is already destroyed, and telling the user it is "still
+ * valid" sends them hunting for a live secret that no longer exists. Whether the caller
+ * is still authenticated is exactly what logout is asked, so it is tracked, not guessed.
  */
 export function clearCredentials() {
   const credPath = getCredentialsPath();
+  let shredded = false;
   try {
     fs.writeFileSync(credPath, crypto.randomBytes(fs.statSync(credPath).size));
+    shredded = true;
     fs.unlinkSync(credPath);
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return;
     throw new CliError(
-      ErrorKind.INTERNAL,
-      `Could not remove the stored credentials at ${credPath}`,
-      ExitCode.GENERAL,
+      ErrorKind.CONFIG_ERROR,
+      shredded
+        ? `Signed out, but could not delete ${credPath}`
+        : `Could not remove the stored credentials at ${credPath}`,
+      ExitCode.CONFIG,
       {
-        hint: 'They are still there and still valid. Delete the file yourself, or fix its permissions and run `numo logout` again.',
+        hint: shredded
+          ? 'The stored token has been destroyed and is no longer usable. Only the empty file is left — delete it yourself, or fix the permissions on its directory.'
+          : 'They are still there and still usable. Fix the permissions on the file, or delete it yourself.',
       },
     );
   }

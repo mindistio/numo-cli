@@ -121,15 +121,10 @@ describe('parseHumanDate', () => {
     }
   );
 
-  // Liveness for the rule above, and the boundary it must not cross: an offset is a tail
-  // too, and it belongs to chrono. Refusing every tail would take these with it.
-  it.each([
-    ['2026-03-27T14:30:00Z', '2026-03-27 10:30'],
-    ['2026-03-27 14:30', '2026-03-27 14:30'],
-    ['2026-03-27', '2026-03-27'],
-  ])('still accepts %s', (input, expected) => {
-    expect(parseHumanDate(input)).toBe(expected);
-  });
+  // Liveness for the rule above already exists: 'keeps ISO-shaped input in the shape it
+  // is already in' and 'converts an explicit offset to the local clock' pin every
+  // well-formed tail between them, so widening the junk guard to refuse everything is
+  // killed there rather than by a third copy of the same three inputs.
 
   it('returns null rather than a guess for empty or unparseable input', () => {
     expect(parseHumanDate('')).toBeNull();
