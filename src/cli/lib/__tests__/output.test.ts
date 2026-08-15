@@ -50,7 +50,7 @@ describe('selectFields', () => {
 
   // Contract: ONLY the named key is trimmed, even when a second record sits beside it.
   //
-  // This is the real `tasks complete` shape (numo-api services/tasks.ts): `task` is the
+  // This is the real `tasks complete` shape as numo-api serialises it: `task` is the
   // record the command acted on, `taskHistory` is the completion record beside it — a
   // second full task from serializeTask, not a wrapper around one. Trimming by JS type
   // instead of by name hit both, and nothing could ask the second one back, because

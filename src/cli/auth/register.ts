@@ -59,17 +59,16 @@ export async function register(
     // where we find out, and a *refused* sign-in means the address was already taken
     // by someone whose password this is not.
     //
-    // Refused, not merely failed. A 429 (login is 10/min against register's 5), a 5xx,
-    // or a connection dropped between the two calls says nothing about the address —
-    // and the account was just created successfully. Reporting those as CONFLICT tells
-    // someone who did sign up that they did not, exits 101, and discards the
-    // credentials they now have. Anything that is not an auth refusal goes to
-    // `classifyError` below and is reported as itself.
+    // Refused, not merely failed. A 429 — the two calls are rate-limited separately, so
+    // the second can be refused when the first was not — or a 5xx, or a connection
+    // dropped between them, says nothing about the address, and the account was just
+    // created successfully. Reporting those as CONFLICT tells someone who did sign up
+    // that they did not, exits 101, and discards the credentials they now have. Anything
+    // that is not an auth refusal goes to `classifyError` below and is reported as itself.
     //
-    // 401 exactly. numo-api answers every credential refusal — INVALID_LOGIN_CREDENTIALS,
-    // INVALID_PASSWORD, EMAIL_NOT_FOUND — with AUTH_REQUIRED (services/firebase-auth.ts).
-    // Its only 400 from this route is INVALID_EMAIL, which says the address is malformed,
-    // not that someone else holds it.
+    // 401 exactly: that is the status numo-api gives every credential refusal, whichever
+    // half was wrong. Its only 400 from this route says the address is malformed, not
+    // that someone else holds it.
     const result = await postLogin(email, password).catch((err: unknown) => {
       const status = (err as { response?: { status?: number } })?.response?.status;
       if (status !== 401) throw err;
@@ -119,8 +118,8 @@ export async function register(
   } catch (err: unknown) {
     const classified = err instanceof CliError ? err : classifyError(err);
 
-    // The register call can succeed and only the sign-in after it fail — a 429 from
-    // the login limiter (10/min against register's 5), a 5xx, a dropped connection.
+    // The register call can succeed and only the sign-in after it fail — a 429 from the
+    // login limiter, a 5xx, a dropped connection.
     // The account exists in every one of those; the only thing missing is a session.
     // Saying "could not create the account" there sends someone to sign up again for
     // an address that is now taken — by themselves.

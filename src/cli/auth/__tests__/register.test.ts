@@ -159,8 +159,8 @@ describe('numo register', () => {
   });
 
   // Contract: only a *refused* sign-in means the address was taken. Everything else
-  // that can fail between "account created" and "signed in" — the login limiter (10/min
-  // against register's 5), a 5xx, a dropped connection — is reported as itself.
+  // that can fail between "account created" and "signed in" — the login limiter, a 5xx,
+  // a dropped connection — is reported as itself.
   //
   // This is the boundary the previous tests had inverted: they mocked a bare Error,
   // which is what the network case looks like, and asserted it WAS CONFLICT. So the

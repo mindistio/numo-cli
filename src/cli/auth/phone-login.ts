@@ -49,13 +49,12 @@ export async function authenticateWithPhone(
   // "already exists, try `numo login --phone`" named the command the user had just
   // run. A wrong NUMO_API_URL made that a loop with no way out of it.
   // No retries: this call is not idempotent. Receiving it mints a session, an SMS
-  // allowance and — in the same breath — a 30-second per-number cooldown
-  // (numo-api services/phone-sessions.ts). So when the response was lost rather than
-  // never sent (an edge 502, a dropped connection), the retry reached a server that
-  // had already armed its own guard and answered 429 with retryAfter ≈ 29. 429 is
-  // retryable too, so http slept the full Retry-After and tried twice more: about a
-  // minute of waiting, ending in "Too many requests — wait 29 seconds", on the user's
-  // FIRST login attempt, with a live unused session sitting on the server.
+  // allowance and — in the same breath — a per-number cooldown. So when the response
+  // was lost rather than never sent (an edge 502, a dropped connection), the retry
+  // reached a server that had already armed its own guard and answered 429 with a
+  // Retry-After covering what was left of it. 429 is retryable too, so http slept that
+  // out and tried twice more, ending in "Too many requests — wait N seconds" on the
+  // user's FIRST login attempt, with a live unused session sitting on the server.
   const startResp = await http
     .post(`${API_BASE}/api/auth/phone/start`, { phoneNumber: phone, intent }, { retries: 0 })
     .catch((err: any) => {

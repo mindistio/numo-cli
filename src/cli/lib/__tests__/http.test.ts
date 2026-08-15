@@ -68,8 +68,8 @@ describe('http retries', () => {
   // Contract: a caller can opt out, because the retry loop cannot tell a request that
   // never arrived from a response that was lost coming back. For a call that mints
   // something on receipt, that difference is the whole story — see auth/phone-login.ts,
-  // where the retry met the 30-second cooldown its own first attempt had armed, and
-  // turned a first login attempt into "wait 29 seconds".
+  // where the retry met the per-number cooldown its own first attempt had armed, and
+  // turned a first login attempt into "wait, you have tried too often".
   //
   // Paired with the bound above on purpose: an opt-out test alone would pass on a
   // build that never retried anything.
