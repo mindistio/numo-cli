@@ -7,7 +7,10 @@ await esbuild.build({
   entryPoints: ['src/cli/cli.ts'],
   bundle: true,
   platform: 'node',
-  target: 'node20',
+  // The floor this package promises, and the one CI runs. esbuild downlevels syntax to
+  // it, so this and engines.node in package.json are the same statement said twice —
+  // they move together or the bundle stops matching the manifest.
+  target: 'node22',
   outfile: 'dist/cli.cjs',
   format: 'cjs',
   external: ['open'],

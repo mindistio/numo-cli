@@ -16,14 +16,18 @@ permissions:
 jobs:
   ci:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # Both ends, because this one is published: 22 is the floor engines.node
+        # promises and build.mjs compiles to, 24 is where it is developed. A floor
+        # nothing runs is a claim, not support.
+        node-version: [22, 24]
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          # engines.node is a published promise here, not a deployment detail: whatever
-          # floor package.json names is the floor this job has to run.
-          node-version: 24
+          node-version: ${{ matrix.node-version }}
           cache: 'npm'
 
       - run: npm ci
