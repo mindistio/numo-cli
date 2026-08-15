@@ -1,7 +1,26 @@
 import * as chrono from 'chrono-node';
 import { localDateOnly } from './task-dates';
 
-const PLAIN_DATE = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?(?::\d{2})?(?:\.\d+)?$/;
+/**
+ * An offset-less ISO date carrying a clock. Only ever used to REFUSE one: chrono
+ * reproduces every well-formed case here exactly — measured against 2.9 for the T and
+ * space separators, with seconds, with a fraction, and for 00:00 — so parsing them a
+ * second time by hand was two answers to one question, and the calendar check that stood
+ * beside it duplicated chrono too (2026-13-45 and 2026-02-30 come back null from it).
+ *
+ * What chrono cannot do is say no. Handed a broken clock it drops the clock and keeps
+ * the bare day: "2026-03-27 25:00" and "2026-08-14:15" both come back as the date alone.
+ * That is the same silent loss `--due tonight` used to make — a task booked up to a full
+ * day early, with nothing to notice — so the refusal stays on this side.
+ */
+const ISO_CLOCK = /^\d{4}-\d{2}-\d{2}[T ](\d{2}):(\d{2})(?::\d{2})?(?:\.\d+)?$/;
+
+/**
+ * An ISO date followed by something that is neither a clock, an offset, nor the end of
+ * the string. `2026-08-14:15` is the shape that motivated it: the old pattern read the
+ * `:15` as the seconds of a time it had never matched, and answered with the bare day.
+ */
+const ISO_JUNK_TAIL = /^\d{4}-\d{2}-\d{2}(?![T ]|[+-]|Z?$)/;
 
 /**
  * The casual time bands chrono understands. It files their hour under *implied*
@@ -23,12 +42,6 @@ function hhmm(d: Date): string {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
-/** Whether the calendar actually has this day — `new Date` rolls 2026-13-45 over instead. */
-function isRealDate(year: number, month: number, day: number): boolean {
-  const d = new Date(year, month - 1, day);
-  return d.getFullYear() === year && d.getMonth() === month - 1 && d.getDate() === day;
-}
-
 /**
  * Parse a human-friendly date string into 'YYYY-MM-DD' or 'YYYY-MM-DD HH:mm'.
  * Accepts ISO-shaped input, with or without an offset, and natural language
@@ -39,21 +52,13 @@ export function parseHumanDate(input: string): string | null {
   const trimmed = input.trim();
   if (!trimmed) return null;
 
-  // Offset-less date: the digits are already what the wire wants, but they still have to
-  // be a date. "2026-13-45" is one the CLI can see is impossible, so it says so here where
-  // the message can name the input, and a stray 'T' or seconds leave the documented shape.
-  //
-  // The anchor matters: an instant carrying an offset ("...14:30:00Z") deliberately falls
-  // past here to chrono, which converts it to the local clock. Matching it here and
-  // returning the digits would keep 14:30Z as 14:30 and move the task by the whole offset.
-  const plain = PLAIN_DATE.exec(trimmed);
-  if (plain) {
-    const [, y, mo, d, h, mi] = plain;
-    if (!isRealDate(+y, +mo, +d)) return null;
-    if (h === undefined) return `${y}-${mo}-${d}`;
-    if (+h > 23 || +mi > 59) return null;
-    return `${y}-${mo}-${d} ${h}:${mi}`;
-  }
+  // Refuse the two shapes chrono answers by throwing the clock away, then hand it
+  // everything else — including any instant carrying an offset ("…14:30:00Z"), which it
+  // converts to the local clock. Reading those digits here instead would keep 14:30Z as
+  // 14:30 and move the task by the whole offset.
+  const clock = ISO_CLOCK.exec(trimmed);
+  if (clock && (+clock[1]! > 23 || +clock[2]! > 59)) return null;
+  if (ISO_JUNK_TAIL.test(trimmed)) return null;
 
   const [result] = chrono.parse(trimmed, new Date(), { forwardDate: true });
   if (!result) return null;

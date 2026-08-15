@@ -107,6 +107,30 @@ describe('parseHumanDate', () => {
     expect(parseHumanDate('2026-03-27 23:59')).toBe('2026-03-27 23:59');
   });
 
+  // Contract: an ISO date with a tail that is not a clock is refused, not narrowed to the
+  // day. This is the whole reason the ISO branch survives at all — chrono reproduces every
+  // well-formed case exactly, but handed a broken clock it drops it and answers with the
+  // bare date, which books the task up to a full day early and reports nothing.
+  //
+  // `2026-08-14:15` was accepted as `2026-08-14` until this commit: the old pattern read
+  // the `:15` as the seconds of a time it had never matched.
+  it.each(['2026-08-14:15', '2026-08-14garbage', '2026-03-27 24:00', '2026-03-27 12:60'])(
+    'refuses %s rather than keeping the day and dropping the rest',
+    (input) => {
+      expect(parseHumanDate(input)).toBeNull();
+    }
+  );
+
+  // Liveness for the rule above, and the boundary it must not cross: an offset is a tail
+  // too, and it belongs to chrono. Refusing every tail would take these with it.
+  it.each([
+    ['2026-03-27T14:30:00Z', '2026-03-27 10:30'],
+    ['2026-03-27 14:30', '2026-03-27 14:30'],
+    ['2026-03-27', '2026-03-27'],
+  ])('still accepts %s', (input, expected) => {
+    expect(parseHumanDate(input)).toBe(expected);
+  });
+
   it('returns null rather than a guess for empty or unparseable input', () => {
     expect(parseHumanDate('')).toBeNull();
     expect(parseHumanDate('   ')).toBeNull();
