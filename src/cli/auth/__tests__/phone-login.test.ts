@@ -8,7 +8,9 @@ vi.mock('../../lib/http', () => ({ http: { post: vi.fn(), get: vi.fn() } }));
 vi.mock('../../lib/prompts', () => ({ promptText: vi.fn().mockResolvedValue('+380501234567') }));
 vi.mock('../../lib/api-base', () => ({ assertSafeApiBase: vi.fn() }));
 vi.mock('../../lib/api-client', () => ({ API_BASE: 'http://localhost:3000' }));
-vi.mock('@clack/prompts', () => ({ log: { info: vi.fn() } }));
+// `warn` as well as `info`: the surprise-account case is reported on the warning channel
+// deliberately, and a mock missing it would make that path throw instead of assert.
+vi.mock('@clack/prompts', () => ({ log: { info: vi.fn(), warn: vi.fn() } }));
 vi.mock('open', () => ({ default: vi.fn().mockResolvedValue({ unref: vi.fn() }) }));
 
 describe('authenticateWithPhone', () => {
@@ -76,10 +78,10 @@ describe('authenticateWithPhone', () => {
     for (const url of urls) expect(url).not.toContain('secret-abc');
   });
 
-  // Contract: the intent reaches the server. Without it numo-api takes its legacy
-  // no-gate path, where a login with an unregistered number silently CREATES an
-  // account — so a mistyped digit signed the user into a new empty account with
-  // nothing to read that said so.
+  // Contract: the intent reaches the server. Nothing there acts on it any more — the
+  // pre-OTP gate is gone — but numo-api records it on the session and keeps validating it,
+  // and a published binary sends it forever. Dropping it here would break that contract
+  // silently, since no response would change.
   it.each([
     ['login', undefined],
     ['login', 'login' as const],
@@ -106,22 +108,62 @@ describe('authenticateWithPhone', () => {
     expect(body).toMatchObject({ intent: expected });
   });
 
-  // Contract: the gate's two refusals are reported as themselves, each naming the
-  // command that would have worked. They are the only reason to send an intent at all;
-  // rendered as a generic 403/404 the user learns nothing they can act on.
+  // Contract: the server answers `created` after the OTP, and the CLI reports which of the
+  // two things happened. This is the whole reason the pre-OTP gate could be removed — the
+  // distinction did not disappear, it moved to where it can be observed instead of guessed.
+  //
+  // The `login` + `created` row is the one that matters and the one asserted hardest: the
+  // deleted 404 used to catch exactly this, so if this line is ever softened into a greeting,
+  // removing the gate will have made the user strictly less informed than before.
   it.each([
-    [409, 'signup' as const, /already exists/i, 'numo login --phone'],
-    [404, 'login' as const, /no account/i, 'numo register --phone'],
-  ])('maps a %i from the gate to a suggestion', async (status, intent, message, suggestion) => {
+    ['login' as const, true, /a new one was created/i, 'warn' as const],
+    ['login' as const, false, /signed in/i, 'info' as const],
+    ['signup' as const, true, /account created/i, 'info' as const],
+    ['signup' as const, false, /already existed/i, 'info' as const],
+  ])('reports intent=%s + created=%s on the %s channel', async (intent, created, message, channel) => {
     const { http } = await import('../../lib/http');
-    vi.mocked(http.post).mockRejectedValueOnce(Object.assign(new Error('gate'), { response: { status } }));
+    vi.mocked(http.post).mockResolvedValueOnce({
+      data: { sessionId: 's', pollSecret: 'ps', userCode: 'PAIR11', verifyUrl: 'http://localhost:3000/v' },
+    } as never);
+    vi.mocked(http.get).mockResolvedValueOnce({
+      status: 200, data: { idToken: 't', refreshToken: 'r', uid: 'u', expiresIn: 3600, created },
+    } as never);
 
     const { authenticateWithPhone } = await import('../phone-login');
+    const p = await import('@clack/prompts');
 
-    await expect(authenticateWithPhone({ start: vi.fn(), stop: vi.fn() }, intent)).rejects.toMatchObject({
-      message: expect.stringMatching(message),
-      options: expect.objectContaining({ suggestion }),
-    });
+    vi.useFakeTimers();
+    const promise = authenticateWithPhone({ start: vi.fn(), stop: vi.fn() }, intent);
+    await vi.advanceTimersByTimeAsync(2000);
+    await promise;
+
+    expect(vi.mocked(p.log[channel]).mock.calls.flat().join(' ')).toMatch(message);
+  });
+
+  // The absent row, and it is NOT a degraded-mode fallback: numo-api omits `created`
+  // whenever the account carries no usable creation time, which is an ordinary runtime
+  // condition. So it has to read as a normal successful login and claim nothing either way —
+  // in particular it must not fire the surprise-account warning, which would then cry wolf on
+  // every clock skew.
+  it('claims nothing either way when the server omits created', async () => {
+    const { http } = await import('../../lib/http');
+    vi.mocked(http.post).mockResolvedValueOnce({
+      data: { sessionId: 's', pollSecret: 'ps', userCode: 'PAIR11', verifyUrl: 'http://localhost:3000/v' },
+    } as never);
+    vi.mocked(http.get).mockResolvedValueOnce({
+      status: 200, data: { idToken: 't', refreshToken: 'r', uid: 'u', expiresIn: 3600 },
+    } as never);
+
+    const { authenticateWithPhone } = await import('../phone-login');
+    const p = await import('@clack/prompts');
+
+    vi.useFakeTimers();
+    const promise = authenticateWithPhone({ start: vi.fn(), stop: vi.fn() }, 'login');
+    await vi.advanceTimersByTimeAsync(2000);
+    await promise;
+
+    expect(vi.mocked(p.log.warn)).not.toHaveBeenCalled();
+    expect(vi.mocked(p.log.info).mock.calls.flat().join(' ')).toMatch(/signed in/i);
   });
 
   // Contract: /phone/start is sent once. The mechanism IS the promise here, so the
@@ -182,9 +224,8 @@ describe('authenticateWithPhone', () => {
   });
 
   // Contract: an expired session sends the user back to the command they were running.
-  // Hardcoding login sent a first-time `numo register --phone` user — whose session had
-  // merely timed out, so no account exists — to a login the gate then refuses, which
-  // suggests register, which brings them back here.
+  // Hardcoding one of the two sent a `numo register --phone` user whose session had merely
+  // timed out off to the other command, for no reason they could see.
   it('names the command that was running when the session expired', async () => {
     const { http } = await import('../../lib/http');
     vi.mocked(http.post).mockResolvedValueOnce({
