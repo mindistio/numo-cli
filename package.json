@@ -46,7 +46,8 @@
     "access": "public"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=22",
+    "npm": ">=10"
   },
   "dependencies": {
     "@clack/prompts": "1.1.0",
@@ -61,5 +62,6 @@
     "tsx": "4.22.4",
     "typescript": "5.9.3",
     "vitest": "4.1.9"
-  }
+  },
+  "packageManager": "npm@11.11.0"
 }

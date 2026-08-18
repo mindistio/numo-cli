@@ -18,6 +18,11 @@ import { getMe } from '../services/me';
  * others. This one is the only one a USER ever sees, and it is the one that stayed at
  * 18 when the rest moved: `numo doctor` reported "all checks passed" on a Node that
  * `npm i -g numo` refuses, which is the run where a broken install is being diagnosed.
+ *
+ * Four, still — `.nvmrc` is a fifth number but not a fifth copy of THIS one. It pins 24,
+ * the version releases are cut on; this is 22, the oldest one still supported. They are
+ * different facts and are allowed to differ. What must not drift is this against
+ * engines.node, which is what the doctor test asserts.
  */
 export const MIN_NODE_MAJOR = 22;
 
