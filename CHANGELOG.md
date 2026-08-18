@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.0](https://github.com/mindistio/numo-cli/compare/v1.7.0...v1.8.0) (2026-08-18)
+
+
+### Features
+
+* numo register, numo verify-email, and honest phone signup/login reporting ([#17](https://github.com/mindistio/numo-cli/issues/17)) ([e56ba07](https://github.com/mindistio/numo-cli/commit/e56ba076602b938db18d621ab37bd7458703b24f))
+
 ## [1.7.0](https://github.com/mindistio/numo-cli/compare/v1.6.1...v1.7.0) (2026-07-31)
 
 
