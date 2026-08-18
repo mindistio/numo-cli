@@ -33,11 +33,20 @@ numo login
 ```
 Prompts for email + password, or use `--phone` for SMS OTP. Credentials are stored locally.
 
-`register` and `login` are not interchangeable for phone. `numo login --phone` with a
-number that has no account exits `100` / `NOT_FOUND`, and `numo register --phone` with
-one that already has an account exits `101` / `CONFLICT`. Each error names the other
-command. (Before 1.8 `login --phone` silently created the account, so a mistyped digit
-signed you into a new empty one.)
+For phone, `register` and `login` differ only in what they REPORT — neither is refused.
+The server takes the intent, records it, and decides nothing with it: whether an account
+existed is observed after the OTP, not predicted before it. So `numo login --phone` on an
+unregistered number sends an SMS and creates the account, and `numo register --phone` on
+a registered one signs into it. Both exit `0`; the last line says which happened:
+
+```
+You asked to log in, but no account existed for +380501234567 — a new one was created.
+If you mistyped the number, run numo logout and try again with the correct one.
+```
+
+Do not branch on an exit code to tell the two apart — there isn't one. A mistyped number
+now sends the code to a stranger and the flow ends in `numo login --phone` timing out
+after five minutes (`75` / `TIMEOUT`), so check the digits before running it.
 
 ### Non-interactive (agents / CI)
 

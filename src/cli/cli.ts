@@ -93,8 +93,10 @@ Creating an account signs you in immediately. A verification link is emailed to 
 address; some actions stay unavailable until you follow it or run numo verify-email.
 A phone account is verified by the SMS itself, so it has no email step.
 
-register and login are not interchangeable for phone: registering a number that
-already has an account is refused, and so is logging in with one that does not.`);
+For phone, register and login differ only in what they report — neither is refused.
+Whether an account already existed is observed after the SMS, not predicted before it,
+so logging in with an unregistered number creates one and says so. Check the digits:
+a mistyped number sends the code to a stranger and the flow times out.`);
 
 registerVerifyEmailCommand(program);
 
