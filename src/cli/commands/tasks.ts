@@ -621,7 +621,7 @@ Examples:
           const cross = pc.red(SYM.cross);
           console.log(`\n  ${cross} Deleted  ${data.taskText || taskId}`);
           if (data.archived) console.log(`    ${pc.dim('Archived')}`);
-          if (data.partial) printPartialNotice(data.failed);
+          // No partial notice: delete cannot report one — see TaskDeleteResponse.
           console.log('');
         },
       });

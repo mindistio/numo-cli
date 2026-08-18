@@ -70,9 +70,8 @@ export interface TaskDeleteResponse {
   archived: boolean;
   /** True when the ID was already archived by a prior delete — idempotent retry, no counters touched. */
   alreadyArchived?: boolean;
-  /** Set when a non-critical side effect (ordering/streak) failed but the delete committed. */
-  partial?: boolean;
-  failed?: string[];
+  // No `partial`/`failed` here, unlike complete and uncomplete. Delete's side effects
+  // swallow their own errors server-side, so the fields are never sent.
 }
 
 export interface TaskCompleteResponse {
