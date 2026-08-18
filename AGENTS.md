@@ -243,7 +243,7 @@ All errors return structured JSON on stderr:
   "error": {
     "kind": "AUTH_FORBIDDEN",
     "code": 77,
-    "message": "Please verify your email before creating tasks. Check your inbox, or run: numo verify-email",
+    "message": "Please verify your email before creating tasks.",
     "retryable": false
   }
 }
