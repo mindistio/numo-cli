@@ -70,9 +70,8 @@ export interface TaskDeleteResponse {
   archived: boolean;
   /** True when the ID was already archived by a prior delete — idempotent retry, no counters touched. */
   alreadyArchived?: boolean;
-  /** Set when a non-critical side effect (ordering/streak) failed but the delete committed. */
-  partial?: boolean;
-  failed?: string[];
+  // No `partial`/`failed` here, unlike complete and uncomplete. Delete's side effects
+  // swallow their own errors server-side, so the fields are never sent.
 }
 
 export interface TaskCompleteResponse {
@@ -150,4 +149,18 @@ export interface ProfileResponse {
   email: string | null;
   username: string | null;
   photoURL: string | null;
+}
+
+export interface MeResponse {
+  uid: string;
+  email: string | null;
+  // Optional on purpose: the CLI ships independently of the API, so it routinely
+  // talks to a server older than itself. Absent means "not reported", which is not
+  // the same as false and must never be rendered as one.
+  emailVerified?: boolean;
+  /** The community-write gate (posts, likes): a verified email OR a phone identity. */
+  verified?: boolean;
+  /** The task-creation gate — the same rule plus an exemption for accounts older than
+   *  the server's cutoff, so it can be true where `verified` is false. */
+  canCreateTasks?: boolean;
 }

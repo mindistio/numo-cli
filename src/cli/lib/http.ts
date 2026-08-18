@@ -52,6 +52,16 @@ export interface HttpRequestOptions {
   headers?: Record<string, string>;
   body?: unknown;
   timeout?: number;
+  /**
+   * How many times to re-send after a retryable failure. Defaults to MAX_RETRIES.
+   *
+   * Pass 0 for a call that is not idempotent — one that mints something, or arms a
+   * limit, as a side effect of being received. The retry loop cannot tell a request
+   * that never arrived from a response that was lost on the way back, so for those it
+   * turns one user action into several, and the server answers the extra ones with
+   * whatever guard the first one armed.
+   */
+  retries?: number;
 }
 
 async function doRequest<T = any>(url: string, opts: HttpRequestOptions = {}): Promise<HttpResponse<T>> {
@@ -104,11 +114,12 @@ async function doRequest<T = any>(url: string, opts: HttpRequestOptions = {}): P
 }
 
 async function requestWithRetry<T = any>(url: string, opts: HttpRequestOptions = {}): Promise<HttpResponse<T>> {
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+  const maxRetries = opts.retries ?? MAX_RETRIES;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       return await doRequest<T>(url, opts);
     } catch (err: any) {
-      if (attempt < MAX_RETRIES && isRetryableError(err)) {
+      if (attempt < maxRetries && isRetryableError(err)) {
         const retryAfter = err.response?.headers?.['retry-after'];
         const waitMs = backoffMs(attempt, retryAfter);
         await delay(waitMs);
@@ -124,8 +135,12 @@ export const http = {
   async get<T = any>(url: string, opts?: { headers?: Record<string, string> }): Promise<HttpResponse<T>> {
     return requestWithRetry<T>(url, { method: 'GET', headers: opts?.headers });
   },
-  async post<T = any>(url: string, body?: unknown, opts?: { headers?: Record<string, string> }): Promise<HttpResponse<T>> {
-    return requestWithRetry<T>(url, { method: 'POST', headers: opts?.headers, body });
+  async post<T = any>(
+    url: string,
+    body?: unknown,
+    opts?: { headers?: Record<string, string>; retries?: number },
+  ): Promise<HttpResponse<T>> {
+    return requestWithRetry<T>(url, { method: 'POST', headers: opts?.headers, body, retries: opts?.retries });
   },
   async patch<T = any>(url: string, body?: unknown, opts?: { headers?: Record<string, string> }): Promise<HttpResponse<T>> {
     return requestWithRetry<T>(url, { method: 'PATCH', headers: opts?.headers, body });

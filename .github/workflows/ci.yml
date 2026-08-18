@@ -18,7 +18,15 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        node-version: [20, 22]
+        # Both ends, because this one is published: 22 is the floor engines.node
+        # promises and build.mjs compiles to, 24 is what .nvmrc pins and what releases
+        # are cut on. A floor nothing runs is a claim, not support.
+        #
+        # Written out rather than read from a file, and that is the difference between
+        # this job and every other setup-node in these repos: those pick ONE version and
+        # so can read it from the pin, while this one exists precisely to run the two
+        # that no single field names.
+        node-version: [22, 24]
     steps:
       - uses: actions/checkout@v4
 

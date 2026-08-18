@@ -11,11 +11,8 @@ describe('semverGt', () => {
     expect(semverGt('1.9.0', '2.0.0')).toBe(false);
   });
 
-  it('tolerates a leading v and missing parts', () => {
-    expect(semverGt('v1.2.0', '1.1.0')).toBe(true);
-    expect(semverGt('1.2', '1.1.9')).toBe(true);
-    expect(semverGt('1.0', '1.0.0')).toBe(false);
-  });
+  // No case for a 'v' prefix or a two-part version: both inputs are full semver by
+  // construction — one from the registry, one from package.json at build time.
 });
 
 describe('upgradeCommand', () => {

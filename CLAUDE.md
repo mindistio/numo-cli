@@ -15,6 +15,7 @@ Entry point for Claude Code working in this repo. It links out rather than dupli
 ## Pointers
 - Agent/JSON contract (commands, auth, errors, discovery) → `AGENTS.md`
 - Public overview → `README.md`
+- How tests are written here, and why → `TESTING.md`
 - npm scripts (build / test / typecheck) → `package.json`
 
 The published npm package ships only `dist/cli.cjs` (single-file esbuild bundle, Node 20) + `LICENSE`. Community endpoints are read-only; `tasks create` defaults to private.

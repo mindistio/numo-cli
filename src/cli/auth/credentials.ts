@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as crypto from 'crypto';
 import { ensureConfigDir, getCredentialsPath } from '../lib/dirs';
 import { assertSafeApiBase } from '../lib/api-base';
+import { CliError, ErrorKind, Errors, ExitCode } from '../lib/errors';
 
 interface Credentials {
   refreshToken: string;
@@ -39,14 +40,43 @@ export function saveCredentials(creds: Credentials) {
   if (process.platform !== 'win32') fs.chmodSync(path, 0o600);
 }
 
+/**
+ * Remove the stored credentials, overwriting them first so the refresh token is not
+ * left behind in freed blocks.
+ *
+ * No `existsSync` guard: the file can go away between that check and the stat, and
+ * "there is nothing to remove" is already the ENOENT case below. Asking the same
+ * question twice is one of the two answers being wrong under a race.
+ *
+ * The two steps fail on DIFFERENT permissions, and the difference is the whole message.
+ * Writing to an existing file needs write on the FILE (0600, ours); unlinking needs
+ * write on the DIRECTORY. So under a read-only directory the shred lands and only the
+ * unlink throws — the token is already destroyed, and telling the user it is "still
+ * valid" sends them hunting for a live secret that no longer exists. Whether the caller
+ * is still authenticated is exactly what logout is asked, so it is tracked, not guessed.
+ */
 export function clearCredentials() {
+  const credPath = getCredentialsPath();
+  let shredded = false;
   try {
-    const credPath = getCredentialsPath();
-    const stat = fs.statSync(credPath);
-    // Overwrite with random data before deleting
-    fs.writeFileSync(credPath, crypto.randomBytes(stat.size));
+    fs.writeFileSync(credPath, crypto.randomBytes(fs.statSync(credPath).size));
+    shredded = true;
     fs.unlinkSync(credPath);
-  } catch {}
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return;
+    throw new CliError(
+      ErrorKind.CONFIG_ERROR,
+      shredded
+        ? `Signed out, but could not delete ${credPath}`
+        : `Could not remove the stored credentials at ${credPath}`,
+      ExitCode.CONFIG,
+      {
+        hint: shredded
+          ? 'The stored token has been destroyed and is no longer usable. Only the empty file is left — delete it yourself, or fix the permissions on its directory.'
+          : 'They are still there and still usable. Fix the permissions on the file, or delete it yourself.',
+      },
+    );
+  }
 }
 
 // Promise lock to prevent concurrent token refreshes
@@ -58,7 +88,7 @@ export async function getIdToken(): Promise<string> {
   if (envToken) return envToken;
 
   const creds = loadCredentials();
-  if (!creds) throw new Error('Not logged in. Run: numo login');
+  if (!creds) throw Errors.authRequired();
 
   // Return cached token if still valid
   if (creds.idToken && creds.idTokenExpiry && Date.now() < creds.idTokenExpiry - 60000) {

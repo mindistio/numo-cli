@@ -45,26 +45,60 @@ function pickFields(obj: Record<string, unknown>, fields: string[]): Record<stri
   return result;
 }
 
-export function selectFields(data: unknown, fields: string | boolean | undefined): unknown {
-  if (!fields || fields === true) return data;
-  const fieldList = (fields as string).split(',').map(f => f.trim());
+function parseFieldList(fields: string | boolean | undefined): string[] | null {
+  if (!fields || fields === true) return null;
+  return (fields as string).split(',').map(f => f.trim());
+}
 
-  if (Array.isArray(data)) {
-    return data.map(item => pickFields(item as Record<string, unknown>, fieldList));
+/**
+ * Trim a payload that IS the record. `tasks get` and `posts get` return an ApiTask /
+ * ApiPost directly (services/tasks.ts, services/posts.ts) — no envelope around it —
+ * so the field list has to apply to the payload itself. Reading it as an envelope
+ * and trimming its nested values instead left every top-level scalar in place, which
+ * meant `--json id,text` on a get returned the whole task, private note included.
+ */
+export function selectRecordFields(record: unknown, fields: string | boolean | undefined): unknown {
+  const fieldList = parseFieldList(fields);
+  if (!fieldList || record === null || typeof record !== 'object' || Array.isArray(record)) {
+    return record;
   }
-  if (typeof data === 'object' && data !== null) {
-    const obj = data as Record<string, unknown>;
-    const result: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(obj)) {
-      if (Array.isArray(value) && value.length > 0 && typeof value[0] === 'object') {
-        result[key] = value.map((item: any) => pickFields(item, fieldList));
-      } else {
-        result[key] = value;
-      }
-    }
-    return result;
+  return pickFields(record as Record<string, unknown>, fieldList);
+}
+
+/**
+ * Trim the record(s) under `recordKey`, leaving every other key of the envelope
+ * exactly as it arrived. `recordKey` is the same key the runner already uses to pull
+ * the record out for the human renderer, so the two views agree by construction.
+ *
+ * Naming the key is the point. Trimming by JS type instead — "any nested object" —
+ * is strictly wider than "the record this command is about", and `tasks complete`
+ * returns `{completed, taskHistory, karma, checksInRow, taskText}` where taskHistory
+ * is a peer record (numo-api serializeTask), not a wrapper. `--json karma` emptied it
+ * to `{}`, and no field list could get it back: `--json taskHistory` looked for a key
+ * of that name *inside* it.
+ *
+ * Omit `recordKey` when the envelope holds no record to trim — that same complete
+ * response, and delete, whose scalars are the whole answer.
+ */
+export function selectFields(
+  envelope: unknown,
+  fields: string | boolean | undefined,
+  recordKey?: string,
+): unknown {
+  const fieldList = parseFieldList(fields);
+  if (!fieldList || recordKey === undefined || envelope === null || typeof envelope !== 'object') {
+    return envelope;
   }
-  return data;
+  const obj = envelope as Record<string, unknown>;
+  const value = obj[recordKey];
+  if (value === null || typeof value !== 'object') return envelope;
+
+  return {
+    ...obj,
+    [recordKey]: Array.isArray(value)
+      ? value.map(item => pickFields(item as Record<string, unknown>, fieldList))
+      : pickFields(value as Record<string, unknown>, fieldList),
+  };
 }
 
 export function outputError(err: unknown, asJson: boolean): never {

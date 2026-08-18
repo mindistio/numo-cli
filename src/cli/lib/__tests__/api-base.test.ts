@@ -21,6 +21,20 @@ describe('classifyApiBase', () => {
     expect(v.ok).toBe(false);
   });
 
+  // Contract: the trust rule is the numo.ai *domain*, not the numo.ai suffix. Every host
+  // below is one somebody else can register, and being trusted here means the bearer
+  // token goes there with no opt-in and no warning — the one outcome this check exists to
+  // prevent. `evil.example` above does not cover it: it fails under any spelling of the
+  // rule, including the wrong one.
+  it('does not trust a host that merely ends in numo.ai', () => {
+    for (const host of ['evilnumo.ai', 'notnumo.ai', 'numo.ai.evil.example', 'numo.ai.co']) {
+      expect(classifyApiBase(`https://${host}`, true)).toMatchObject({ ok: false });
+    }
+    // Liveness: the real subdomain still passes, or a rule that trusts nothing at all
+    // would satisfy the loop above.
+    expect(classifyApiBase('https://api.numo.ai', true)).toMatchObject({ ok: true });
+  });
+
   it('allows an untrusted host when NUMO_ALLOW_CUSTOM_HOST=1 (self-host/staging)', () => {
     process.env.NUMO_ALLOW_CUSTOM_HOST = '1';
     expect(classifyApiBase('https://my-numo.internal', true)).toEqual({ ok: true, insecure: false });

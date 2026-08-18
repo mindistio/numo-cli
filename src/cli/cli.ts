@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import pc from 'picocolors';
 import { login } from './auth/login';
+import { register } from './auth/register';
 import { clearCredentials, loadCredentials } from './auth/credentials';
 import { getCredentialsPath } from './lib/dirs';
 import { registerTasksCommands } from './commands/tasks';
@@ -8,18 +9,33 @@ import { registerTasksCommands } from './commands/tasks';
 import { registerPostsCommands } from './commands/posts';
 import { registerProfileCommands } from './commands/profile';
 import { registerDoctorCommand } from './commands/doctor';
+import { registerVerifyEmailCommand } from './commands/verify-email';
 import { migrateIfNeeded } from './lib/dirs';
 import { checkForUpdate } from './lib/update-check';
 import { outputError, printJson } from './lib/output';
 import { collectCommands, formatCommandMap } from './lib/command-map';
 import { getAgentGuide } from './lib/guide';
 import { isQuietMode } from './lib/quiet';
-import { ExitCode, Errors } from './lib/errors';
+import { ExitCode, Errors, CliError, ErrorKind, commanderToCliError } from './lib/errors';
+import { buildCommandSchema, SCHEMA_VERSION } from './lib/schema';
+import { decodeTokenClaims, verificationClaim } from './lib/token';
 
 declare const __CLI_VERSION__: string;
 const CLI_VERSION = typeof __CLI_VERSION__ !== 'undefined' ? __CLI_VERSION__ : '0.0.0-dev';
 
 const program = new Command();
+
+// Commander exits the process on a parse error, bypassing the JSON error contract.
+// This has to run before any subcommand is registered: each one copies the handler
+// at creation time, so a later call would only ever cover the root.
+program.exitOverride();
+program.configureOutput({
+  // Commander's own error line would land on stderr ahead of the JSON body.
+  outputError: () => {},
+  // Same for the help dump it prints when a group is called without a subcommand:
+  // in JSON mode stderr carries the error and nothing else.
+  writeErr: (str) => { if (!isQuietMode(program.opts())) process.stderr.write(str); },
+});
 
 program
   .name('numo')
@@ -62,12 +78,41 @@ Examples:
   $ NUMO_LOGIN_EMAIL=… NUMO_LOGIN_PASSWORD=… numo login --json   # Non-interactive (CI/agents)`);
 
 program
+  .command('register')
+  .alias('signup')
+  .description('Create a Numo account and sign in')
+  .option('--phone', 'Create the account with a phone number (SMS) instead of an email')
+  .action(async function (this: Command) { await register(this.optsWithGlobals(), program); })
+  .addHelpText('after', `
+Examples:
+  $ numo register                                       # Interactive
+  $ numo register --phone                               # SMS OTP flow
+  $ NUMO_LOGIN_EMAIL=… NUMO_LOGIN_PASSWORD=… numo register --json   # Non-interactive (CI/agents)
+
+Creating an account signs you in immediately. A verification link is emailed to the
+address; some actions stay unavailable until you follow it or run numo verify-email.
+A phone account is verified by the SMS itself, so it has no email step.
+
+For phone, register and login differ only in what they report — neither is refused.
+Whether an account already existed is observed after the SMS, not predicted before it,
+so logging in with an unregistered number creates one and says so. Check the digits:
+a mistyped number sends the code to a stranger and the flow times out.`);
+
+registerVerifyEmailCommand(program);
+
+program
   .command('logout')
   .description('Clear stored credentials')
-  .action(() => {
+  .action(function (this: Command) {
     clearCredentials();
+    const envTokenStillSet = !!process.env.NUMO_TOKEN;
+
+    if (isQuietMode(this.optsWithGlobals())) {
+      printJson({ loggedOut: true, envTokenStillSet });
+      return;
+    }
     console.log(pc.green('Logged out.'));
-    if (process.env.NUMO_TOKEN) {
+    if (envTokenStillSet) {
       console.log(pc.yellow('\n  Note: NUMO_TOKEN env var is still set. Unset it to fully de-authenticate.'));
     }
   })
@@ -78,49 +123,49 @@ Examples:
 If NUMO_TOKEN env var is set, it is not cleared by logout. Unset it separately:
   $ unset NUMO_TOKEN`);
 
+function printVerification(emailVerified: boolean | null) {
+  if (emailVerified === null) return;
+  const value = emailVerified ? pc.green('yes') : pc.yellow('no');
+  console.log(`  ${pc.bold('Email verified')}  ${value} ${pc.dim('(from the stored token — numo doctor asks the server)')}`);
+}
+
 program
   .command('whoami')
   .description('Show current auth status (no API call)')
   .addHelpText('after', `
 Examples:
   $ numo whoami
-  $ numo whoami --json   # → {"email":"...","uid":"...","tokenValid":true,"expiresIn":N,"source":"..."}`)
+  $ numo whoami --json   # → {"email":"...","uid":"...","tokenValid":true,"expiresIn":N,"source":"..."}
+
+emailVerified here is read from the stored token, which keeps its old value for up
+to an hour after the link is clicked. For the authoritative answer, make the request
+and read the response — or run numo doctor.`)
   .action(function(this: Command) {
     const opts = this.optsWithGlobals();
     const asJson = isQuietMode(opts);
 
     const envToken = process.env.NUMO_TOKEN;
-    const creds = loadCredentials();
 
-    // NUMO_TOKEN env path: no credentials file needed. Decode the JWT `exp`
-    // claim so we can report real validity instead of "AUTH_REQUIRED".
+    // NUMO_TOKEN takes priority over the credentials file, matching getIdToken —
+    // otherwise whoami would describe an identity the API calls never use. Its JWT
+    // `exp` claim is decoded so validity is reported instead of "AUTH_REQUIRED".
     // NUMO_TOKEN tokens do NOT auto-refresh — long-running scripts must use
     // NUMO_LOGIN_EMAIL / NUMO_LOGIN_PASSWORD instead.
-    if (!creds && envToken) {
-      let tokenValid = false;
-      let expiresIn = 0;
-      let email: string | null = null;
-      let uid: string | null = null;
-      try {
-        const payloadB64 = envToken.split('.')[1] ?? '';
-        const payload = JSON.parse(Buffer.from(payloadB64, 'base64').toString('utf8'));
-        if (typeof payload.exp === 'number') {
-          const expMs = payload.exp * 1000;
-          tokenValid = Date.now() < expMs;
-          expiresIn = Math.max(0, Math.floor((expMs - Date.now()) / 1000));
-        }
-        if (typeof payload.email === 'string') email = payload.email;
-        if (typeof payload.user_id === 'string') uid = payload.user_id;
-        else if (typeof payload.sub === 'string') uid = payload.sub;
-      } catch {
-        // Malformed token — leave tokenValid=false.
-      }
+    if (envToken) {
+      const claims = decodeTokenClaims(envToken);
+      const tokenValid = !!claims?.expMs && Date.now() < claims.expMs;
+      const expiresIn = claims?.expMs ? Math.max(0, Math.floor((claims.expMs - Date.now()) / 1000)) : 0;
+      const email = claims?.email ?? null;
+      const uid = claims?.uid ?? null;
+      const verification = verificationClaim(claims);
+
       if (asJson) {
-        printJson({ email, uid, tokenValid, expiresIn, source: 'NUMO_TOKEN', autoRefresh: false });
+        printJson({ email, uid, tokenValid, expiresIn, source: 'NUMO_TOKEN', autoRefresh: false, ...verification });
       } else {
         if (email) console.log(`  ${pc.bold('Email')}  ${email}`);
         if (uid) console.log(`  ${pc.bold('UID')}    ${uid}`);
         console.log(`  ${pc.bold('Token')}  ${tokenValid ? pc.green(`valid (expires in ${Math.floor(expiresIn / 60)}m)`) : pc.red('expired or malformed')}`);
+        printVerification(verification.emailVerified);
         console.log(`  ${pc.bold('Auth')}   NUMO_TOKEN env var ${pc.dim('(no auto-refresh; use NUMO_LOGIN_EMAIL/PASSWORD for long sessions)')}`);
       }
       // An expired/malformed NUMO_TOKEN is not usable and does not auto-refresh —
@@ -129,6 +174,7 @@ Examples:
       return;
     }
 
+    const creds = loadCredentials();
     if (!creds) {
       outputError(Errors.authRequired(), asJson);
       return;
@@ -137,13 +183,15 @@ Examples:
     const tokenValid = !!(creds.idToken && creds.idTokenExpiry && Date.now() < creds.idTokenExpiry);
     const expiresIn = creds.idTokenExpiry ? Math.max(0, Math.floor((creds.idTokenExpiry - Date.now()) / 1000)) : 0;
     const source = 'credentials_file';
+    const verification = verificationClaim(decodeTokenClaims(creds.idToken));
 
     if (asJson) {
-      printJson({ email: creds.email, uid: creds.uid, tokenValid, expiresIn, source, autoRefresh: true });
+      printJson({ email: creds.email, uid: creds.uid, tokenValid, expiresIn, source, autoRefresh: true, ...verification });
     } else {
       console.log(`  ${pc.bold('Email')}  ${creds.email}`);
       console.log(`  ${pc.bold('UID')}    ${creds.uid}`);
       console.log(`  ${pc.bold('Token')}  ${tokenValid ? pc.green(`valid (expires in ${Math.floor(expiresIn / 60)}m)`) : pc.yellow('expired (will auto-refresh)')}`);
+      printVerification(verification.emailVerified);
       console.log(`  ${pc.bold('Auth')}   ${getCredentialsPath()}`);
     }
   });
@@ -192,41 +240,6 @@ Examples:
     }
   });
 
-// Allowed values for options that accept a closed set — surfaced so agents don't guess.
-const OPTION_ENUMS: Record<string, ReadonlyArray<string | number>> = {
-  '--repeat': ['daily', 'weekly', 'monthly', 'none'],
-  '--difficulty': [0, 1, 2, 3],
-};
-
-function buildCommandSchema(cmd: Command, fullName: string): Record<string, unknown> {
-  return {
-    name: fullName,
-    description: cmd.description(),
-    arguments: (cmd as any).registeredArguments?.map((a: any) => ({
-      name: a.name(),
-      required: a.required,
-      variadic: a.variadic,
-      description: a.description,
-    })) ?? [],
-    options: cmd.options
-      .filter((o: any) => !['--json', '-q, --quiet'].includes(o.flags))
-      .map((o: any) => {
-        const takesValue = o.required || o.optional;
-        const repeatable = Array.isArray(o.defaultValue);
-        const opt: Record<string, unknown> = {
-          flags: o.flags,
-          description: o.description,
-          type: takesValue ? (repeatable ? 'string[]' : 'string') : 'boolean',
-          required: o.required,
-          default: o.defaultValue,
-        };
-        if (repeatable) opt.repeatable = true;
-        if (OPTION_ENUMS[o.long]) opt.enum = OPTION_ENUMS[o.long];
-        return opt;
-      }),
-  };
-}
-
 program
   .command('schema [command]')
   .description('Print JSON schema for a command (for AI agents)')
@@ -241,7 +254,7 @@ program
         }
       }
       walk(program, '');
-      console.log(JSON.stringify({ schemaVersion: '1', cliVersion: CLI_VERSION, commands: schemas }, null, 2));
+      console.log(JSON.stringify({ schemaVersion: SCHEMA_VERSION, cliVersion: CLI_VERSION, commands: schemas }, null, 2));
       return;
     }
 
@@ -250,22 +263,28 @@ program
     for (const part of parts) {
       const sub = cmd.commands.find((c: Command) => c.name() === part);
       if (!sub) {
-        console.error(`Unknown command: ${cmdPath}`);
-        console.error(`Available: ${cmd.commands.map((c: Command) => c.name()).join(', ')}`);
-        process.exit(ExitCode.USAGE);
+        outputError(
+          Errors.invalidInput(
+            `Unknown command: ${cmdPath}`,
+            `Available: ${cmd.commands.map((c: Command) => c.name()).join(', ')}`,
+          ),
+          isQuietMode(this.optsWithGlobals()),
+        );
       }
       cmd = sub;
     }
-    console.log(JSON.stringify({ schemaVersion: '1', cliVersion: CLI_VERSION, ...buildCommandSchema(cmd, cmdPath) }, null, 2));
+    console.log(JSON.stringify({ schemaVersion: SCHEMA_VERSION, cliVersion: CLI_VERSION, ...buildCommandSchema(cmd, cmdPath) }, null, 2));
   });
 
 program
   .command('completion <shell>')
   .description('Generate shell completion script')
-  .action(function (shell: string) {
+  .action(function (this: Command, shell: string) {
     if (shell !== 'zsh') {
-      console.error(`Unsupported shell: ${shell}. Currently only 'zsh' is supported.`);
-      process.exit(ExitCode.USAGE);
+      outputError(
+        Errors.invalidInput(`Unsupported shell: ${shell}`, "Only 'zsh' is supported."),
+        isQuietMode(this.optsWithGlobals()),
+      );
     }
 
     const lines: string[] = ['#compdef numo', '', '_numo() {', '  local -a commands', ''];
@@ -347,9 +366,25 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   });
 }
 
+// A bare `numo` from someone with no credentials is a first run, not a usage error.
+// Every command below needs an account, so name the two ways to get one instead of
+// dumping help for all of them. Deliberately does not start a flow — auto-launching
+// one is hostile in a script and in CI.
+if (process.argv.length <= 2 && !process.env.NUMO_TOKEN && !loadCredentials()) {
+  outputError(
+    new CliError(ErrorKind.AUTH_REQUIRED, 'Not signed in', ExitCode.NO_PERM, {
+      suggestion: 'numo register',
+      hint: 'Already have an account? Run: numo login',
+    }),
+    isQuietMode(program.opts()),
+  );
+}
+
 program.parseAsync(process.argv)
   .catch((err) => {
-    outputError(err, !!program.opts().json);
+    // --help and --version land here too, having already written their output.
+    if (err?.exitCode === 0) process.exit(0);
+    outputError(commanderToCliError(err), isQuietMode(program.opts()));
   })
   .finally(() => {
     checkForUpdate(CLI_VERSION);

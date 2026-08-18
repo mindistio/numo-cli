@@ -1,4 +1,4 @@
-import { printTable, printJson, outputResult, outputError, selectFields } from './output';
+import { printTable, printJson, outputResult, outputError, selectFields, selectRecordFields } from './output';
 import { withSpinner } from './spinner';
 import { isQuietMode } from './quiet';
 
@@ -24,7 +24,7 @@ export async function runGet<T>(opts: {
       opts.fn,
     );
     if (useJson(opts.global)) {
-      printJson(selectFields(result as Record<string, unknown>, opts.global.json));
+      printJson(selectRecordFields(result, opts.global.json));
     } else if (opts.onInteractive) {
       opts.onInteractive(result);
     } else {
@@ -51,7 +51,7 @@ export async function runList<T>(opts: {
     );
 
     if (useJson(opts.global)) {
-      printJson(selectFields(payload as Record<string, unknown>, opts.global.json));
+      printJson(selectFields(payload, opts.global.json, opts.dataKey));
     } else if (opts.onInteractive) {
       opts.onInteractive(payload);
     } else {
@@ -83,7 +83,7 @@ export async function runCreate<T>(opts: {
     const item = (payload as Record<string, unknown>)[opts.dataKey] as Record<string, unknown>;
 
     if (useJson(opts.global)) {
-      printJson(selectFields(payload as Record<string, unknown>, opts.global.json));
+      printJson(selectFields(payload, opts.global.json, opts.dataKey));
     } else if (opts.onInteractive) {
       opts.onInteractive(item, payload);
     } else {
@@ -114,7 +114,7 @@ export async function runWrite<T>(opts: {
     const item = (opts.dataKey ? (payload as Record<string, unknown>)[opts.dataKey] : payload) as Record<string, unknown>;
 
     if (useJson(opts.global)) {
-      printJson(selectFields(payload as Record<string, unknown>, opts.global.json));
+      printJson(selectFields(payload, opts.global.json, opts.dataKey));
     } else if (opts.onInteractive) {
       opts.onInteractive(payload);
     } else {

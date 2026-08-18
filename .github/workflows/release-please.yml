@@ -31,7 +31,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          # `.nvmrc`, not `package.json`: `engines.node` here is `>=22`, the range this
+          # package SUPPORTS, and resolving a range gives whatever Node is newest that
+          # day — an untested runtime cutting a release. `.nvmrc` names the one this is
+          # developed and released on, and doubles as the `nvm use` a contributor runs.
+          node-version-file: .nvmrc
           registry-url: 'https://registry.npmjs.org'
           cache: 'npm'
       - run: npm ci
@@ -51,7 +55,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: 'npm'
       - uses: oven-sh/setup-bun@v2
       - run: npm ci

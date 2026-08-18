@@ -66,9 +66,7 @@ export const Errors = {
     }),
 
   notFound: (resource: string, id?: string) =>
-    new CliError(ErrorKind.NOT_FOUND, `${resource} not found${id ? `: ${id}` : ''}`, ExitCode.NOT_FOUND, {
-      suggestion: `numo ${resource.toLowerCase()}s list`,
-    }),
+    new CliError(ErrorKind.NOT_FOUND, `${resource} not found${id ? `: ${id}` : ''}`, ExitCode.NOT_FOUND),
 
   missingArg: (name: string, flag: string) =>
     new CliError(ErrorKind.MISSING_ARGUMENT, `${name} is required`, ExitCode.USAGE, {
@@ -104,28 +102,47 @@ export const Errors = {
     }),
 };
 
-export function classifyError(err: unknown): CliError {
-  if (err instanceof CliError) return err;
+const KIND_EXIT: Readonly<Partial<Record<ErrorKind, number>>> = {
+  [ErrorKind.AUTH_REQUIRED]: ExitCode.NO_PERM,
+  [ErrorKind.AUTH_EXPIRED]: ExitCode.NO_PERM,
+  [ErrorKind.AUTH_FORBIDDEN]: ExitCode.NO_PERM,
+  [ErrorKind.INVALID_INPUT]: ExitCode.USAGE,
+  [ErrorKind.MISSING_ARGUMENT]: ExitCode.USAGE,
+  [ErrorKind.NOT_FOUND]: ExitCode.NOT_FOUND,
+  [ErrorKind.CONFLICT]: ExitCode.CONFLICT,
+  [ErrorKind.RATE_LIMITED]: ExitCode.TEMP_FAIL,
+  [ErrorKind.NETWORK_ERROR]: ExitCode.UNAVAILABLE,
+  [ErrorKind.TIMEOUT]: ExitCode.TEMP_FAIL,
+  [ErrorKind.SERVICE_UNAVAILABLE]: ExitCode.UNAVAILABLE,
+  [ErrorKind.CONFIG_ERROR]: ExitCode.CONFIG,
+  // Both arrive through a status the table below answers differently, and with no row
+  // of their own they inherited it. numo-api sends INTERNAL as a 500, so it was exiting
+  // 69 (UNAVAILABLE) — the same code as SERVICE_UNAVAILABLE, erasing the distinction
+  // the server draws between "this is down, come back" and "we failed and are not
+  // saying it will work next time". An unclassified failure is exit 1, which is also
+  // what the CLI published before the two classifiers were merged into this one.
+  [ErrorKind.INTERNAL]: ExitCode.GENERAL,
+  [ErrorKind.UNKNOWN]: ExitCode.GENERAL,
+};
 
-  const axiosErr = err as {
-    code?: string;
-    response?: {
-      status?: number;
-      headers?: Record<string, string>;
-      data?: { error?: { code?: number; message?: string; status?: string } };
-    };
-    message?: string;
+const ERROR_KINDS = new Set<string>(Object.values(ErrorKind));
+
+interface HttpErrorShape {
+  code?: string;
+  response?: {
+    status?: number;
+    headers?: Record<string, string>;
+    data?: { error?: { kind?: string; message?: string; retryable?: boolean; retryAfter?: number } };
   };
+  message?: string;
+}
 
-  // Network errors (no response received)
-  if (axiosErr.code === 'ECONNABORTED' || axiosErr.code === 'ETIMEDOUT') return Errors.timeout();
-  if (axiosErr.code === 'ENOTFOUND' || axiosErr.code === 'EAI_AGAIN') return Errors.networkError();
-  if (axiosErr.code === 'ECONNREFUSED' || axiosErr.code === 'ECONNRESET') {
-    return Errors.networkError('Service may be temporarily down. Try again in a moment.');
+function fromStatus(status: number, headers?: Record<string, string>): CliError | null {
+  if (status === 400) {
+    return new CliError(ErrorKind.INVALID_INPUT, 'Invalid request', ExitCode.USAGE, {
+      hint: 'Run with --help to check the accepted arguments.',
+    });
   }
-
-  // HTTP status based
-  const status = axiosErr.response?.status;
   if (status === 401) return Errors.authRequired();
   if (status === 403) {
     return new CliError(ErrorKind.AUTH_FORBIDDEN, 'Access denied', ExitCode.NO_PERM, {
@@ -133,23 +150,106 @@ export function classifyError(err: unknown): CliError {
     });
   }
   if (status === 404) return Errors.notFound('Resource');
+  if (status === 409) return new CliError(ErrorKind.CONFLICT, 'Already exists', ExitCode.CONFLICT);
   if (status === 429) {
-    const retryAfter = parseInt(axiosErr.response?.headers?.['retry-after'] ?? '');
+    const retryAfter = parseInt(headers?.['retry-after'] ?? '');
     return Errors.rateLimited(isNaN(retryAfter) ? undefined : retryAfter);
   }
-  if (status && status >= 500) {
+  if (status >= 500) {
     return new CliError(ErrorKind.SERVICE_UNAVAILABLE, 'Server error', ExitCode.UNAVAILABLE, {
       hint: 'This is on our end. Try again in a moment.',
       retryable: true,
     });
   }
+  return null;
+}
 
-  // Fallback: extract message from error, sanitized
-  const body = axiosErr.response?.data;
-  const raw = body?.error?.message ?? axiosErr.message ?? 'Unknown error';
-  const message = sanitizeErrorMessage(raw);
+/**
+ * The single path from any thrown value to the error the user sees.
+ *
+ * Status first, structured body on top: only the status table carries `suggestion`,
+ * `hint` and the Retry-After header, so the body overrides just `kind` and `message`.
+ * Showing a generic "Access denied" over a server explanation is the failure this exists to avoid.
+ */
+export function classifyError(err: unknown): CliError {
+  if (err instanceof CliError) return err;
 
-  return new CliError(ErrorKind.UNKNOWN, message, ExitCode.GENERAL, { cause: err });
+  // `throw` accepts any value, and this is the last stop before the user sees it.
+  const httpErr = (typeof err === 'object' && err !== null ? err : { message: String(err ?? '') }) as HttpErrorShape;
+
+  if (httpErr.code === 'ECONNABORTED' || httpErr.code === 'ETIMEDOUT') return Errors.timeout();
+  if (httpErr.code === 'ENOTFOUND' || httpErr.code === 'EAI_AGAIN') return Errors.networkError();
+  // Split, because the reader can act on only one of them. ECONNREFUSED means the host
+  // answered and nothing is listening on that port — for anyone pointing NUMO_API_URL at
+  // their own deployment or a local port that is the whole diagnosis, and "the service is
+  // down" sends them to wait for one that is running fine somewhere else. So the two
+  // hints say disjoint things: this one names the address, that one names the wait.
+  if (httpErr.code === 'ECONNREFUSED') {
+    return Errors.networkError('Nothing is listening there. Check NUMO_API_URL, or start the service it points at.');
+  }
+  // An established connection that dropped. Nothing here to check; try again.
+  if (httpErr.code === 'ECONNRESET') {
+    return Errors.networkError('Service may be temporarily down. Try again in a moment.');
+  }
+
+  const status = httpErr.response?.status;
+  const base = status ? fromStatus(status, httpErr.response?.headers) : null;
+  const body = httpErr.response?.data?.error;
+
+  const kind = body?.kind && ERROR_KINDS.has(body.kind) ? (body.kind as ErrorKind) : base?.kind;
+  const message = sanitizeErrorMessage(body?.message ?? base?.message ?? httpErr.message ?? 'Unknown error');
+
+  if (!kind) return new CliError(ErrorKind.UNKNOWN, message, ExitCode.GENERAL, { cause: err });
+
+  return new CliError(kind, message, KIND_EXIT[kind] ?? base?.exitCode ?? ExitCode.GENERAL, {
+    ...base?.options,
+    // A hint in the status table is generic by construction — it is what we can say
+    // knowing only the status. Once the server has explained itself, that explanation
+    // is the guidance, and "run with --help" over the top of it points the wrong way.
+    // A suggestion is a command to run, so it survives.
+    //
+    // "Explained itself" means said something the status table did not already say.
+    // numo-api answers a 429 with the same bare "Too many requests" — dropping the
+    // hint there would throw away the only place Retry-After reaches a human.
+    hint: body?.message != null && body.message !== base?.message ? undefined : base?.options.hint,
+    // Body first for these two, the opposite way round from hint and suggestion above.
+    // The status table can only guess from the number — every 5xx is `retryable: true`
+    // there because most are — while the body is the server saying it about this error.
+    // numo-api's AppError.toJSON always emits the field, so an INTERNAL arrived
+    // carrying an explicit `false` and the table overrode it to `true`. An agent
+    // following the AGENTS.md contract then retried a failure the server had declared
+    // permanent, on top of the four attempts http.ts had already made.
+    retryable: body?.retryable ?? base?.options.retryable,
+    retryAfter: body?.retryAfter ?? base?.options.retryAfter,
+    cause: err,
+  });
+}
+
+const COMMANDER_KIND: Record<string, ErrorKind> = {
+  'commander.unknownCommand': ErrorKind.INVALID_INPUT,
+  'commander.unknownOption': ErrorKind.INVALID_INPUT,
+  'commander.missingArgument': ErrorKind.MISSING_ARGUMENT,
+  'commander.optionMissingArgument': ErrorKind.MISSING_ARGUMENT,
+  // A command group invoked without a subcommand reports itself as "help was shown".
+  'commander.help': ErrorKind.MISSING_ARGUMENT,
+};
+
+/**
+ * Argument-parsing failures reach the user through the same contract as everything
+ * else. The message echoes what was typed, so it is sanitized like any other.
+ */
+export function commanderToCliError(err: unknown): CliError {
+  const code = (err as { code?: string })?.code ?? '';
+  const kind = COMMANDER_KIND[code];
+  if (!kind) return classifyError(err);
+
+  const message = code === 'commander.help'
+    ? 'Missing subcommand'
+    : sanitizeErrorMessage((err as Error).message).replace(/^error: /, '');
+
+  return new CliError(kind, message, ExitCode.USAGE, {
+    hint: 'Run with --help for available commands and options.',
+  });
 }
 
 export function sanitizeErrorMessage(msg: string): string {

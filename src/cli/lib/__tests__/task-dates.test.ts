@@ -1,8 +1,12 @@
+// Pinned, because two rules in this file are about timezones and would otherwise be
+// checked against whichever one the developer happens to sit in. New York gives both a
+// negative UTC offset and a DST transition on a known date.
+process.env.TZ = 'America/New_York';
+
 import { describe, it, expect } from 'vitest';
 import {
   localDateOnly,
   localDateOffset,
-  toApiDueDate,
   normalizeDueDateInBody,
   isCompletableDate,
 } from '../task-dates';
@@ -27,25 +31,18 @@ describe('localDateOffset', () => {
     expect(localDateOffset(0, base)).toBe('2026-06-19');
   });
 
-  it('rolls across month boundaries', () => {
-    expect(localDateOffset(1, new Date(2026, 5, 30, 12, 0))).toBe('2026-07-01');
-    expect(localDateOffset(-1, new Date(2026, 6, 1, 12, 0))).toBe('2026-06-30');
+  // Contract: a day is a calendar day, not 24 hours. Adding 86_400_000ms — which the
+  // module header warns against and which a month-rollover case cannot tell apart —
+  // lands on the 9th here, because the clock moved forward overnight on the 8th.
+  it('crosses a DST boundary by the calendar, not by adding 24 hours', () => {
+    expect(localDateOffset(1, new Date(2026, 2, 7, 23, 30))).toBe('2026-03-08');
+    expect(localDateOffset(-1, new Date(2026, 2, 8, 0, 30))).toBe('2026-03-07');
   });
 });
 
-describe('toApiDueDate', () => {
-  it("appends ' 00:00' to a bare date", () => {
-    expect(toApiDueDate('2026-06-19')).toBe('2026-06-19 00:00');
-  });
-
-  it('passes through YYYY-MM-DD HH:mm unchanged', () => {
-    expect(toApiDueDate('2026-06-19 14:30')).toBe('2026-06-19 14:30');
-  });
-
-  it('slices anything longer to minutes', () => {
-    expect(toApiDueDate('2026-06-19 14:30:59')).toBe('2026-06-19 14:30');
-  });
-});
+// toApiDueDate has no describe of its own. Nothing outside this module calls it — every
+// path reaches it through normalizeDueDateInBody, and those cases assert the same
+// input/output pairs one call further out, where a caller actually stands.
 
 describe('normalizeDueDateInBody', () => {
   it('canonicalizes a bare date (no withTime sent — the API derives it)', () => {
@@ -60,6 +57,14 @@ describe('normalizeDueDateInBody', () => {
     normalizeDueDateInBody(body);
     expect(body.dueDate).toBe('2026-06-19 14:30');
     expect('withTime' in body).toBe(false);
+  });
+
+  // The other half of the same rule: a value already in the wire shape is not mangled by
+  // the slicing that trims the one above.
+  it('leaves an already-canonical timed date alone', () => {
+    const body: Record<string, unknown> = { text: 'x', dueDate: '2026-06-19 14:30' };
+    normalizeDueDateInBody(body);
+    expect(body.dueDate).toBe('2026-06-19 14:30');
   });
 
   it('leaves a body without dueDate untouched', () => {

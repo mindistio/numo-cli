@@ -1,0 +1,261 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { Command } from 'commander';
+import * as fsSync from 'fs';
+
+vi.mock('../../lib/api-client', () => ({ API_BASE: 'https://api.numo.ai' }));
+vi.mock('../../lib/api-base', () => ({ classifyApiBase: vi.fn(() => ({ ok: true, insecure: false })) }));
+vi.mock('../../auth/credentials', () => ({
+  loadCredentials: vi.fn(() => ({ refreshToken: 'rt', uid: 'u1', email: 'a@b.com' })),
+  getIdToken: vi.fn(async () => 'id-token'),
+}));
+vi.mock('../../services/me', () => ({ getMe: vi.fn() }));
+vi.mock('../../lib/output', () => ({ printJson: vi.fn() }));
+vi.mock('dns', () => ({ promises: { resolve: vi.fn(async () => ['203.0.113.1']) } }));
+// The ready callback fires on a later tick, as the real socket's does — calling it
+// synchronously would hand the code a socket variable it has not assigned yet.
+vi.mock('tls', () => {
+  const socket = { getProtocol: () => 'TLSv1.3', end: vi.fn(), on: vi.fn(), destroy: vi.fn() };
+  return {
+    default: {
+      connect: vi.fn((_o: unknown, onReady: () => void) => { queueMicrotask(onReady); return socket; }),
+    },
+  };
+});
+
+import { registerDoctorCommand } from '../doctor';
+import { classifyApiBase } from '../../lib/api-base';
+import { loadCredentials, getIdToken } from '../../auth/credentials';
+import { getMe } from '../../services/me';
+import { printJson } from '../../lib/output';
+import { promises as dns } from 'dns';
+
+type Check = { name: string; status: 'ok' | 'warn' | 'fail'; message: string };
+type Report = { ok: boolean; exitCode: number; checks: Check[] };
+
+let fetchMock: ReturnType<typeof vi.fn>;
+
+/** Run `numo doctor --json` and return the report, plus the exit code it asked for. */
+async function doctor(): Promise<{ report: Report; exited: number | undefined }> {
+  let exited: number | undefined;
+  vi.spyOn(process, 'exit').mockImplementation(((code?: number) => { exited = code; return undefined as never; }) as never);
+
+  const program = new Command();
+  program.exitOverride().option('--json [fields]').option('-q, --quiet');
+  registerDoctorCommand(program);
+  await program.parseAsync(['doctor', '--json'], { from: 'user' });
+
+  const [payload] = vi.mocked(printJson).mock.calls.at(-1) ?? [];
+  return { report: payload as Report, exited };
+}
+
+const checkNamed = (report: Report, name: string) => report.checks.find((c) => c.name === name);
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.mocked(classifyApiBase).mockReturnValue({ ok: true, insecure: false });
+  vi.mocked(loadCredentials).mockReturnValue({ refreshToken: 'rt', uid: 'u1', email: 'a@b.com' } as never);
+  vi.mocked(getIdToken).mockResolvedValue('id-token');
+  vi.mocked(getMe).mockResolvedValue({ uid: 'u1', email: 'a@b.com', emailVerified: true, canCreateTasks: true });
+  fetchMock = vi.fn(async () => ({ ok: true, status: 200 }) as unknown as Response);
+  vi.stubGlobal('fetch', fetchMock);
+  // Isolation: NUMO_TOKEN is now part of what doctor gates on, and it is an ordinary
+  // env var a developer may well have exported. Left alone, these cases would pass or
+  // fail depending on whose shell ran them.
+  delete process.env.NUMO_TOKEN;
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
+
+describe('numo doctor', () => {
+  // Contract: an untrusted host is reported, not probed. doctor is the one command a user
+  // runs when things are broken, so it is the most likely place to be pointed at a host
+  // the credential guard has already refused — and it must not be the way around it.
+  it('sends nothing anywhere when the API base is untrusted', async () => {
+    vi.mocked(classifyApiBase).mockReturnValue({ ok: false, message: 'Refusing to send credentials to untrusted host "evil.example"' });
+
+    const { report, exited } = await doctor();
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(dns.resolve).not.toHaveBeenCalled();
+    expect(getIdToken).not.toHaveBeenCalled();
+    expect(checkNamed(report, 'api_url')).toMatchObject({ status: 'fail' });
+    expect(report.ok).toBe(false);
+    expect(exited).toBe(1);
+  });
+
+  // Liveness for the check above: on a trusted host the probes do run, or "sends nothing"
+  // would be satisfied by a doctor that never probes at all.
+  it('probes the host when it is trusted', async () => {
+    const { report, exited } = await doctor();
+
+    expect(dns.resolve).toHaveBeenCalledWith('api.numo.ai');
+    expect(fetchMock).toHaveBeenCalled();
+    expect(report.ok).toBe(true);
+    expect(exited).toBeUndefined();
+  });
+
+  // Contract: a warning is not a failure. The CLI ships independently of the server, so
+  // talking to one that does not report a field yet is a normal state — failing the whole
+  // health check for it reads as a broken install in CI.
+  it('warns rather than fails when the server does not report verification', async () => {
+    vi.mocked(getMe).mockResolvedValue({ uid: 'u1', email: 'a@b.com' });
+
+    const { report, exited } = await doctor();
+
+    expect(checkNamed(report, 'verification')).toMatchObject({ status: 'warn' });
+    expect(report.ok).toBe(true);
+    expect(exited).toBeUndefined();
+  });
+
+  it('fails when the server says task creation is blocked', async () => {
+    vi.mocked(getMe).mockResolvedValue({ uid: 'u1', email: 'a@b.com', emailVerified: false, canCreateTasks: false });
+
+    const { report } = await doctor();
+
+    expect(checkNamed(report, 'verification')).toMatchObject({ status: 'fail' });
+    expect(report.ok).toBe(false);
+  });
+
+  // Contract: the community gate is reported even when the task gate is open. These two
+  // disagree for a grandfathered account — it may create tasks and may not post — and
+  // reading only canCreateTasks told that account "verification ok" while every like it
+  // made was being refused. The message has to name which capability is gone, because
+  // "not verified" alone does not tell the user what stopped working.
+  it('fails when posting is blocked even though task creation is allowed', async () => {
+    vi.mocked(getMe).mockResolvedValue({
+      uid: 'u1', email: 'a@b.com', emailVerified: false, verified: false, canCreateTasks: true,
+    });
+
+    const { report } = await doctor();
+
+    expect(checkNamed(report, 'verification')).toMatchObject({ status: 'fail' });
+    expect(checkNamed(report, 'verification')?.message).toMatch(/posting/i);
+    expect(checkNamed(report, 'verification')?.message).not.toMatch(/creating tasks/i);
+    expect(report.ok).toBe(false);
+  });
+
+  // Liveness for the pair above: with both gates open it must actually pass. A check
+  // hard-wired to fail on `verified === false` satisfies that test and this one too;
+  // a check hard-wired to fail satisfies only that one.
+  it('passes when both gates are open', async () => {
+    vi.mocked(getMe).mockResolvedValue({
+      uid: 'u1', email: 'a@b.com', emailVerified: true, verified: true, canCreateTasks: true,
+    });
+
+    const { report } = await doctor();
+
+    expect(checkNamed(report, 'verification')).toMatchObject({ status: 'ok' });
+    expect(report.ok).toBe(true);
+  });
+
+  // A phone account has no email address, so it has nothing to verify by email and
+  // never will. Telling it "Email verified" is a claim about a field it does not have.
+  it('does not credit an email to a phone account', async () => {
+    vi.mocked(getMe).mockResolvedValue({
+      uid: 'u1', email: null, emailVerified: false, verified: true, canCreateTasks: true,
+    });
+
+    const { report } = await doctor();
+
+    expect(checkNamed(report, 'verification')).toMatchObject({ status: 'ok' });
+    expect(checkNamed(report, 'verification')?.message).not.toMatch(/email/i);
+  });
+
+  it('reports not being logged in as a failure, and skips the token check', async () => {
+    vi.mocked(loadCredentials).mockReturnValue(null);
+
+    const { report } = await doctor();
+
+    expect(checkNamed(report, 'credentials')).toMatchObject({ status: 'fail' });
+    expect(getIdToken).not.toHaveBeenCalled();
+    expect(report.ok).toBe(false);
+  });
+
+  // Contract: nothing in this report can carry a credential. doctor output is what a user
+  // pastes into an issue, and a refresh failure is exactly where a token turns up in an
+  // error message.
+  it('does not print a token that appeared in an error message', async () => {
+    const jwt = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1MSJ9.c2lnbmF0dXJl';
+    vi.mocked(getIdToken).mockRejectedValue(new Error(`refresh failed for ${jwt}`));
+
+    const { report } = await doctor();
+
+    const printed = JSON.stringify(report);
+    expect(printed).not.toContain(jwt);
+    expect(checkNamed(report, 'token')).toMatchObject({ status: 'fail' });
+    // Liveness: the message is still there to read, just without the secret in it.
+    expect(checkNamed(report, 'token')!.message).toContain('refresh failed');
+  });
+
+  // Contract: doctor gates on whether this shell can authenticate, not on whether a
+  // credentials file exists. getIdToken() reads NUMO_TOKEN first, so an agent or CI
+  // runner with the env var and no file — the setup AGENTS.md prescribes — makes
+  // perfectly good API calls. doctor reported a broken install for it: credentials
+  // "Not logged in", token "Skipped", and both live checks silently absent, including
+  // the verification report this release exists to produce. Then exit 1.
+  it('passes on NUMO_TOKEN alone, and still runs the live checks', async () => {
+    vi.mocked(loadCredentials).mockReturnValue(null);
+    process.env.NUMO_TOKEN = 'an-id-token-from-the-environment';
+
+    const { report, exited } = await doctor();
+
+    expect(checkNamed(report, 'credentials')).toMatchObject({ status: 'ok' });
+    // Named rather than borrowed: doctor never decodes the token, so it cannot say
+    // whose it is, and "Logged in as ..." would be a claim it has no basis for.
+    expect(checkNamed(report, 'credentials')!.message).toBe('Using NUMO_TOKEN');
+    // The point of the fix: these two exist at all on this path.
+    expect(checkNamed(report, 'auth')).toMatchObject({ status: 'ok' });
+    expect(checkNamed(report, 'verification')).toMatchObject({ status: 'ok' });
+    expect(report.ok).toBe(true);
+    // doctor only calls process.exit on failure (`if (!ok) process.exit(1)`), so a
+    // healthy run leaves it untouched and the published exit code is the reported 0.
+    expect(report.exitCode).toBe(0);
+    expect(exited).toBeUndefined();
+  });
+
+  // Liveness for the case above: with neither a file nor the variable, the checks that
+  // need a token really are skipped and the run really does fail. Otherwise the rule
+  // reads as "always report ok", which would be a worse doctor than the broken one.
+  it('still fails, and skips the live checks, with no credentials and no NUMO_TOKEN', async () => {
+    vi.mocked(loadCredentials).mockReturnValue(null);
+
+    const { report } = await doctor();
+
+    expect(checkNamed(report, 'credentials')).toMatchObject({ status: 'fail' });
+    expect(checkNamed(report, 'auth')).toBeUndefined();
+    expect(checkNamed(report, 'verification')).toBeUndefined();
+    expect(checkNamed(report, 'token')!.message).toMatch(/NUMO_TOKEN/);
+    expect(report.ok).toBe(false);
+  });
+
+  it('reports the exit code it is about to use, so a JSON caller need not guess', async () => {
+    vi.mocked(loadCredentials).mockReturnValue(null);
+    const { report, exited } = await doctor();
+    expect(report.exitCode).toBe(1);
+    expect(exited).toBe(1);
+  });
+});
+
+// Contract: the Node floor is one number, written in four places — package.json
+// engines.node, build.mjs's esbuild target, the CI matrix, and doctor's own check.
+//
+// Only this one is ever shown to a user, and it is the one that stayed at 18 while the
+// other three moved to 22: `numo doctor` answered "all checks passed" on a runtime that
+// `npm i -g numo` refuses, on exactly the run where someone is diagnosing a bad install.
+//
+// Asserted against the manifest rather than against a literal, because a literal here
+// would be a fifth copy of the same number. Changing the constant alone cannot be caught
+// by running the check — CI runs a Node that satisfies both the old floor and the new.
+describe('the Node floor doctor reports', () => {
+  it('is the floor package.json promises', async () => {
+    const { MIN_NODE_MAJOR } = await import('../doctor');
+    const pkg = JSON.parse(
+      fsSync.readFileSync(new URL('../../../../package.json', import.meta.url), 'utf8'),
+    );
+
+    expect(pkg.engines?.node).toBe(`>=${MIN_NODE_MAJOR}`);
+  });
+});

@@ -1,0 +1,28 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`commands --json > lists every runnable command 1`] = `
+[
+  "login",
+  "register",
+  "verify-email",
+  "logout",
+  "whoami",
+  "tasks list",
+  "tasks get",
+  "tasks create",
+  "tasks update",
+  "tasks delete",
+  "tasks complete",
+  "tasks uncomplete",
+  "posts list",
+  "posts get",
+  "posts comments",
+  "posts replies",
+  "profile",
+  "doctor",
+  "commands",
+  "guide",
+  "schema",
+  "completion",
+]
+`;

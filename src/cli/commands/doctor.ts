@@ -10,6 +10,21 @@ import { printJson } from '../lib/output';
 import { isQuietMode } from '../lib/quiet';
 import { SYM } from '../lib/symbols';
 import { sanitizeErrorMessage } from '../lib/errors';
+import { getMe } from '../services/me';
+
+/**
+ * The floor this package supports, and the fourth place it is written down —
+ * package.json engines.node, build.mjs's esbuild target, and the CI matrix are the
+ * others. This one is the only one a USER ever sees, and it is the one that stayed at
+ * 18 when the rest moved: `numo doctor` reported "all checks passed" on a Node that
+ * `npm i -g numo` refuses, which is the run where a broken install is being diagnosed.
+ *
+ * Four, still — `.nvmrc` is a fifth number but not a fifth copy of THIS one. It pins 24,
+ * the version releases are cut on; this is 22, the oldest one still supported. They are
+ * different facts and are allowed to differ. What must not drift is this against
+ * engines.node, which is what the doctor test asserts.
+ */
+export const MIN_NODE_MAJOR = 22;
 
 interface CheckResult {
   name: string;
@@ -60,11 +75,13 @@ async function runChecks(): Promise<CheckResult[]> {
   const checks: CheckResult[] = [];
 
   const nodeVersion = process.version;
-  const major = parseInt(nodeVersion.slice(1), 10);
+  const supported = parseInt(nodeVersion.slice(1), 10) >= MIN_NODE_MAJOR;
   checks.push({
     name: 'node_version',
-    status: major >= 18 ? 'ok' : 'fail',
-    message: major >= 18 ? `Node ${nodeVersion}` : `Node ${nodeVersion} — requires >= 18`,
+    status: supported ? 'ok' : 'fail',
+    message: supported
+      ? `Node ${nodeVersion}`
+      : `Node ${nodeVersion} — requires >= ${MIN_NODE_MAJOR}`,
   });
 
   const verdict = classifyApiBase();
@@ -94,15 +111,28 @@ async function runChecks(): Promise<CheckResult[]> {
     checks.push(await checkTls(apiUrl.hostname));
   }
 
+  // The gate is "can this shell authenticate", not "is there a credentials file".
+  // getIdToken() reads NUMO_TOKEN first (auth/credentials.ts), so an agent or CI runner
+  // with the env var and no file — the setup AGENTS.md prescribes — makes perfectly good
+  // API calls while doctor reported a broken install, failed the whole health check, and
+  // skipped the one report this release added: which verification gate is closed.
   const creds = loadCredentials();
+  const envToken = !!process.env.NUMO_TOKEN;
+  const authed = envToken || !!creds;
   checks.push({
     name: 'credentials',
-    status: creds ? 'ok' : 'fail',
-    message: creds ? `Logged in as ${creds.email}` : 'Not logged in',
-    fix: creds ? undefined : 'numo login',
+    status: authed ? 'ok' : 'fail',
+    // Named, not just passed: "Logged in as <email>" for a token with no file would be
+    // a claim doctor cannot support — it never decodes the token.
+    message: envToken
+      ? 'Using NUMO_TOKEN'
+      : creds
+        ? `Logged in as ${creds.email}`
+        : 'Not logged in',
+    fix: authed ? undefined : 'numo login',
   });
 
-  if (creds) {
+  if (authed) {
     try {
       await getIdToken();
       checks.push({ name: 'token', status: 'ok', message: 'Token valid / refreshed' });
@@ -115,7 +145,7 @@ async function runChecks(): Promise<CheckResult[]> {
       });
     }
   } else {
-    checks.push({ name: 'token', status: 'fail', message: 'Skipped (no credentials)' });
+    checks.push({ name: 'token', status: 'fail', message: 'Skipped (no credentials and no NUMO_TOKEN)' });
   }
 
   try {
@@ -135,7 +165,7 @@ async function runChecks(): Promise<CheckResult[]> {
     });
   }
 
-  if (creds) {
+  if (authed) {
     try {
       const token = await getIdToken();
       const resp = await fetch(`${API_BASE}/api/tasks?backlog=true`, {
@@ -154,6 +184,47 @@ async function runChecks(): Promise<CheckResult[]> {
         status: 'fail',
         message: `Authenticated request error: ${errMessage(err)}`,
         fix: 'numo login',
+      });
+    }
+
+    // Asked live, because the stored token's email_verified claim keeps its old
+    // value for up to an hour after the link is clicked — long enough for doctor to
+    // tell a user who has just verified that they are still blocked.
+    try {
+      const me = await getMe();
+      // Two gates, reported separately because they disagree: `verified` guards posts
+      // and likes with no exemptions, `canCreateTasks` grandfathers accounts older than
+      // the server's cutoff. Reporting only the task one told a legacy account
+      // "verification ok" while the community gate was refusing every like it made.
+      const blocked = [
+        me.verified === false && 'posting and likes',
+        me.canCreateTasks === false && 'creating tasks',
+      ].filter((x): x is string => typeof x === 'string');
+
+      if (me.verified === undefined && me.canCreateTasks === undefined) {
+        // An older server does not report either. Saying "blocked" here would be the
+        // CLI inventing a refusal the server never made — and it fails the whole
+        // health check, which in CI reads as a broken install.
+        checks.push({ name: 'verification', status: 'warn', message: 'Server does not report verification status' });
+      } else {
+        checks.push({
+          name: 'verification',
+          status: blocked.length ? 'fail' : 'ok',
+          message: blocked.length
+            ? `Identity not verified — ${blocked.join(' and ')} blocked`
+            // Not "email verified": a phone account passes with no email at all, and
+            // telling it its email is verified is a claim about a field it lacks.
+            : me.emailVerified
+              ? 'Email verified'
+              : 'Verified',
+          fix: blocked.length ? 'numo verify-email' : undefined,
+        });
+      }
+    } catch (err: unknown) {
+      checks.push({
+        name: 'verification',
+        status: 'warn',
+        message: `Verification status unavailable: ${errMessage(err)}`,
       });
     }
   }

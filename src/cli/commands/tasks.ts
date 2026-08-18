@@ -621,7 +621,7 @@ Examples:
           const cross = pc.red(SYM.cross);
           console.log(`\n  ${cross} Deleted  ${data.taskText || taskId}`);
           if (data.archived) console.log(`    ${pc.dim('Archived')}`);
-          if (data.partial) printPartialNotice(data.failed);
+          // No partial notice: delete cannot report one — see TaskDeleteResponse.
           console.log('');
         },
       });
@@ -665,6 +665,10 @@ Examples:
       await runWrite({
         global: opts,
         fn: () => completeTask(taskId, opts.date),
+        // Two records come back: `task` is the one this command acted on, `taskHistory`
+        // is the completion record beside it. Naming the first is what keeps a field
+        // list from also trimming the second down to fields it does not have.
+        dataKey: 'task',
         spinnerMessage: 'Completing task...',
         onInteractive: (data: TaskCompleteResponse) => {
           const check = pc.green(SYM.check);
