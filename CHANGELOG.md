@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.9.0](https://github.com/mindistio/numo-cli/compare/v1.8.0...v1.9.0) (2026-09-10)
+
+
+### Features
+
+* package numo-cli as an Agent Plugins v1 plugin ([81768a6](https://github.com/mindistio/numo-cli/commit/81768a6c9d9462695e0789f17517fa35d7dd1b62))
+* package numo-cli as an Agent Plugins v1 plugin ([2f3606b](https://github.com/mindistio/numo-cli/commit/2f3606bdf5c9d11e65c877fa8b9d9824f97df6ed))
+
 ## [1.8.0](https://github.com/mindistio/numo-cli/compare/v1.7.0...v1.8.0) (2026-08-18)
 
 
