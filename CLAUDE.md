@@ -17,5 +17,6 @@ Entry point for Claude Code working in this repo. It links out rather than dupli
 - Public overview → `README.md`
 - How tests are written here, and why → `TESTING.md`
 - npm scripts (build / test / typecheck) → `package.json`
+- Agent Plugin package: root `plugin.json` + `skills/` per [Agent Plugins v1](https://agent-plugins.org); `.claude-plugin/plugin.json` mirrors it for Claude Code, and release-please keeps both versions on `package.json`
 
 The published npm package ships only `dist/cli.cjs` (single-file esbuild bundle, Node 20) + `LICENSE`. Community endpoints are read-only; `tasks create` defaults to private.

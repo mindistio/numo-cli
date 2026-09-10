@@ -1,0 +1,14 @@
+{
+  "name": "numo-cli",
+  "version": "1.8.0",
+  "description": "Numo ADHD planner from the terminal or an AI agent — tasks, recurring routines, and the community feed via the numo CLI.",
+  "author": {
+    "name": "Mindist, Inc.",
+    "email": "team@numo.ai",
+    "url": "https://numo.ai"
+  },
+  "homepage": "https://numo.ai/cli",
+  "repository": "https://github.com/mindistio/numo-cli",
+  "license": "MIT",
+  "keywords": ["numo", "adhd", "planner", "tasks", "routines", "productivity", "cli"]
+}

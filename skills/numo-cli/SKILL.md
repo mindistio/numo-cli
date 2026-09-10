@@ -1,8 +1,8 @@
 ---
 name: numo-cli
-description: Manage ADHD tasks, routines and community via Numo CLI
-version: 1.5.0 # x-release-please-version
+description: Create, list, complete, and schedule tasks in the Numo ADHD planner, and read its community feed, by running the numo CLI. Use when the user asks to add a task or a reminder, plan a day or a week, check what is due, or mark something done in Numo.
 license: MIT
+compatibility: Requires the numo CLI on PATH (npm install -g numo-cli) and network access to the Numo API
 ---
 
 # numo-cli
@@ -55,6 +55,8 @@ numo posts comments <postId>
 numo posts replies <postId> <commentId>
 
 # Auth & Utils
+numo register [--phone]                  # create an account and sign in
+numo verify-email [--code <oobCode>]     # resend / redeem the verification email
 numo login [--phone]
 numo logout
 numo whoami --json

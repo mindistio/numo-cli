@@ -14,7 +14,8 @@
         { "type": "ci", "section": "Miscellaneous", "hidden": true }
       ],
       "extra-files": [
-        "skills/numo-cli/SKILL.md"
+        { "type": "json", "path": "plugin.json", "jsonpath": "$.version" },
+        { "type": "json", "path": ".claude-plugin/plugin.json", "jsonpath": "$.version" }
       ]
     }
   }
