@@ -44,9 +44,9 @@ jobs:
         run: npm run typecheck
       - name: Test
         run: npm test
+      # Trusted publishing: npm trades this job's OIDC token (id-token: write above) for a
+      # one-off publish credential, so there is no long-lived npm token to expire or leak.
       - run: npm publish --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   build-binaries:
     needs: release-please
