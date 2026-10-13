@@ -11,6 +11,8 @@ async function apiHeaders(): Promise<Record<string, string>> {
   return {
     Authorization: `Bearer ${token}`,
     'Content-Type': 'application/json',
+    // The user's own zone, so "today" and a task's reminder time are local, not the server's.
+    'X-Numo-Timezone': Intl.DateTimeFormat().resolvedOptions().timeZone,
   };
 }
 
