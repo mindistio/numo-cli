@@ -291,7 +291,7 @@ Examples:
       const providedText = (textParts && textParts.length ? textParts.join(' ') : undefined) ?? opts.text;
       // Any text or creation flag → quick path (no wizard, even in a TTY).
       const hasQuickInput = !!providedText || opts.due || opts.backlog || opts.repeat ||
-        opts.tags || opts.note || opts.difficulty !== undefined || opts.duration ||
+        opts.tags || opts.note || opts.difficulty !== undefined || opts.duration !== undefined ||
         opts.public || opts.private || (opts.subtask && opts.subtask.length);
       const useWizard = isInteractive() && !opts.json && !hasQuickInput;
 
@@ -431,7 +431,7 @@ Examples:
         if (opts.tags) body.tags = opts.tags.split(',');
         if (opts.note) body.note = opts.note;
         if (opts.difficulty !== undefined) body.difficulty = parseIntOption('--difficulty', opts.difficulty);
-        if (opts.duration) body.duration = parseIntOption('--duration', opts.duration);
+        if (opts.duration !== undefined) body.duration = parseIntOption('--duration', opts.duration);
         if (opts.subtask && opts.subtask.length) body.subtasks = buildSubtasks(opts.subtask);
         // Privacy-first default (W-121): private unless --public is passed.
         body.isPublic = opts.public ? true : false;
@@ -499,7 +499,7 @@ Examples:
 
       const body: Record<string, unknown> = {};
       const hasAnyFlag = opts.text || opts.due || opts.tags || opts.public || opts.private ||
-        opts.note || opts.difficulty !== undefined || opts.duration || clearTime ||
+        opts.note || opts.difficulty !== undefined || opts.duration !== undefined || clearTime ||
         opts.repeat !== undefined || opts.backlog || opts.weekdays || opts.monthDays || opts.every ||
         (opts.subtask && opts.subtask.length);
 
@@ -533,7 +533,7 @@ Examples:
         if (opts.private) body.isPublic = false;
         if (opts.note) body.note = opts.note;
         if (opts.difficulty !== undefined) body.difficulty = parseIntOption('--difficulty', opts.difficulty);
-        if (opts.duration) body.duration = parseIntOption('--duration', opts.duration);
+        if (opts.duration !== undefined) body.duration = parseIntOption('--duration', opts.duration);
         const repeat = buildRepeatConfig(opts);
         if (repeat) body.repeat = repeat;
         // --backlog clears the due date; the API moves the task to backlog.
@@ -628,7 +628,7 @@ Examples:
           const cross = pc.red(SYM.cross);
           console.log(`\n  ${cross} Deleted  ${data.taskText || taskId}`);
           if (data.archived) console.log(`    ${pc.dim('Archived')}`);
-          // No partial notice: delete cannot report one — see TaskDeleteResponse.
+          if (data.partial) printPartialNotice(data.failed);
           console.log('');
         },
       });
