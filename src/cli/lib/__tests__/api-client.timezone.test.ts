@@ -31,4 +31,14 @@ describe('api client time zone header', () => {
     const opts = vi.mocked(fn).mock.calls[0][optsArg] as { headers: Record<string, string> };
     expect(opts.headers['X-Numo-Timezone']).toBe('America/Los_Angeles');
   });
+
+  it.each(['', 'Europe/Nowhere'])('leaves the header out when TZ=%j names no usable zone', async (tz) => {
+    vi.stubEnv('TZ', tz);
+
+    await api.get('/api/tasks');
+
+    const opts = vi.mocked(http.get).mock.calls[0][1] as { headers: Record<string, string> };
+    expect(opts.headers).not.toHaveProperty('X-Numo-Timezone');
+    expect(opts.headers.Authorization).toBe('Bearer id-token');
+  });
 });
