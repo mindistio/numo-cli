@@ -44,7 +44,7 @@ numo tasks update <id> --repeat none                   # stop repeating
 numo tasks update <id> --backlog                       # clear due date
 numo tasks delete <id> --yes                           # Skip confirmation
 numo tasks delete --stdin                              # Batch from pipe (NDJSON)
-numo tasks complete <id> --date "2026-03-27 09:00"     # today/yesterday only
+numo tasks complete <id> --date "2026-03-27 09:00"     # any past day; a routine only on a scheduled day
 numo tasks complete --stdin                            # Batch from pipe
 numo tasks uncomplete <historyId>
 

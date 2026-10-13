@@ -11,7 +11,7 @@ import { isInteractive } from '../lib/tty';
 import { SYM } from '../lib/symbols';
 import { Errors, ExitCode } from '../lib/errors';
 import { parseHumanDate, parseHumanDateOnly } from '../lib/parse-date';
-import { localDateOnly, localDateOffset, normalizeDueDateInBody, isCompletableDate } from '../lib/task-dates';
+import { localDateOnly, localDateOffset, normalizeDueDateInBody } from '../lib/task-dates';
 import { buildRepeatConfig, parseMonthDays } from '../lib/task-repeat';
 import { buildSubtasks } from '../lib/task-subtasks';
 import { readStdinLines } from '../lib/stdin';
@@ -20,6 +20,13 @@ import type { ApiTask, TaskListResponse, TaskCreateResponse, TaskUpdateResponse,
 /** Commander collector for a repeatable option — accumulates each occurrence into an array. */
 function collectValue(value: string, previous: string[]): string[] {
   return previous.concat([value]);
+}
+
+// parseInt('abc') is NaN, which JSON sends as null — the API rejects that with a 400
+// that doesn't name the option. Fail here instead, saying which one.
+export function parseIntOption(name: string, value: string): number {
+  if (!/^\d+$/.test(value.trim())) throw Errors.invalidInput(`${name} must be a whole number, got "${value}"`);
+  return Number(value);
 }
 
 async function pickTask(id: string | undefined, actionName: string): Promise<string> {
@@ -384,7 +391,7 @@ Examples:
               { value: '2', label: 'L — High' }, { value: '3', label: 'XL — Huge' },
             ],
           });
-          if (difficulty !== 'skip') body.difficulty = parseInt(difficulty);
+          if (difficulty !== 'skip') body.difficulty = parseIntOption('Difficulty', difficulty);
 
           if (body.dueDate && await promptConfirm({ message: 'Add a specific time?', initialValue: false })) {
             const time = await promptText({ message: 'Time', placeholder: '09:30', required: true });
@@ -423,8 +430,8 @@ Examples:
         if (repeat) body.repeat = repeat;
         if (opts.tags) body.tags = opts.tags.split(',');
         if (opts.note) body.note = opts.note;
-        if (opts.difficulty !== undefined) body.difficulty = parseInt(opts.difficulty);
-        if (opts.duration) body.duration = parseInt(opts.duration);
+        if (opts.difficulty !== undefined) body.difficulty = parseIntOption('--difficulty', opts.difficulty);
+        if (opts.duration) body.duration = parseIntOption('--duration', opts.duration);
         if (opts.subtask && opts.subtask.length) body.subtasks = buildSubtasks(opts.subtask);
         // Privacy-first default (W-121): private unless --public is passed.
         body.isPublic = opts.public ? true : false;
@@ -510,10 +517,10 @@ Examples:
         if (note) body.note = note;
 
         const difficulty = await promptText({ message: 'Difficulty (enter to skip)', placeholder: '0–3', required: false });
-        if (difficulty) body.difficulty = parseInt(difficulty);
+        if (difficulty) body.difficulty = parseIntOption('Difficulty', difficulty);
 
         const duration = await promptText({ message: 'Duration in minutes (enter to skip)', placeholder: '10', required: false });
-        if (duration) body.duration = parseInt(duration);
+        if (duration) body.duration = parseIntOption('Duration', duration);
       } else {
         if (opts.text) body.text = opts.text;
         if (opts.due) {
@@ -525,8 +532,8 @@ Examples:
         if (opts.public) body.isPublic = true;
         if (opts.private) body.isPublic = false;
         if (opts.note) body.note = opts.note;
-        if (opts.difficulty !== undefined) body.difficulty = parseInt(opts.difficulty);
-        if (opts.duration) body.duration = parseInt(opts.duration);
+        if (opts.difficulty !== undefined) body.difficulty = parseIntOption('--difficulty', opts.difficulty);
+        if (opts.duration) body.duration = parseIntOption('--duration', opts.duration);
         const repeat = buildRepeatConfig(opts);
         if (repeat) body.repeat = repeat;
         // --backlog clears the due date; the API moves the task to backlog.
@@ -641,12 +648,8 @@ Examples:
       const opts = this.optsWithGlobals();
       requireAuth();
 
-      // Match the API guard: completion is allowed only for today or yesterday.
-      // Validated client-side (fail fast, applies to the whole --stdin batch too).
-      if (opts.date && !isCompletableDate(opts.date)) {
-        throw Errors.invalidInput('completion date must be today or yesterday');
-      }
-
+      // No local date window: which days a task may be completed on is the API's rule
+      // (any day for a one-off task, a scheduled day for a routine), and its 400 says why.
       if (opts.stdin) {
         const ids = readStdinLines();
         for (const lineId of ids) {
@@ -721,7 +724,8 @@ Examples:
         onInteractive: (data: TaskUncompleteResponse) => {
           const arrow = SYM.undo;
           console.log(`\n  ${pc.yellow(arrow)} Reverted  ${data.task.text ?? taskId}`);
-          console.log(`    ${pc.dim('Karma adjustment applied')}`);
+          // No karmaReverted: the day was already open, so there was no karma to take back.
+          if (data.karmaReverted) console.log(`    ${pc.dim('Karma adjustment applied')}`);
           if (data.partial) printPartialNotice(data.failed);
           console.log('');
         },

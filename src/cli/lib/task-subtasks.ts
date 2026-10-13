@@ -4,12 +4,9 @@ import type { SubTask } from '../types/api';
 /**
  * Build well-formed subtask objects from plain text lines.
  *
- * The API treats subtasks differently per route:
- *  - CREATE regenerates {id, completed} and uses only `text`.
- *  - UPDATE stores the array verbatim.
- * Emitting {id, text, completed:false} is therefore correct for both: create
- * ignores the id, update keeps the shape valid. Note: passing subtasks on
- * `update` REPLACES the whole list (existing completion state is lost).
+ * Both CREATE and UPDATE store the array as sent, so the `randomUUID()` here is
+ * the subtask's final id. Note: passing subtasks on `update` REPLACES the whole
+ * list (existing completion state is lost).
  *
  * Empty/whitespace-only entries are dropped.
  */
