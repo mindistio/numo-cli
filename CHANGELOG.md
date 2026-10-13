@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.9.1](https://github.com/mindistio/numo-cli/compare/v1.9.0...v1.9.1) (2026-10-13)
+
+
+### Bug Fixes
+
+* leave the time zone out when the system has no usable one ([17f5572](https://github.com/mindistio/numo-cli/commit/17f557225aea817af921b24adea0f8f6d14dad14))
+* send the user's time zone with every request ([670833c](https://github.com/mindistio/numo-cli/commit/670833c7336c378c7041269b39b7e267973599ff))
+* send the user's time zone with every request ([2bcc2d1](https://github.com/mindistio/numo-cli/commit/2bcc2d17d4e992c8bd3d88238a0af0e678472bbc))
+
 ## [1.9.0](https://github.com/mindistio/numo-cli/compare/v1.8.0...v1.9.0) (2026-09-10)
 
 
