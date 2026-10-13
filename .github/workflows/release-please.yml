@@ -15,10 +15,11 @@ jobs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
+      # No inputs: the action then reads release-please-config.json and the manifest. A
+      # `release-type` input switches it to single-package mode, which ignores that config,
+      # and with it the `extra-files` that keep the two plugin.json versions in step.
       - uses: googleapis/release-please-action@v4
         id: release
-        with:
-          release-type: node
 
   publish:
     needs: release-please
