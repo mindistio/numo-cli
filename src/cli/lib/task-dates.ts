@@ -39,12 +39,3 @@ export function normalizeDueDateInBody(body: Record<string, unknown>): void {
     body.dueDate = toApiDueDate(body.dueDate);
   }
 }
-
-/**
- * Whether `date` (YYYY-MM-DD or YYYY-MM-DD HH:mm) is today or yesterday by the local
- * calendar — the exact range the API accepts for task completion.
- */
-export function isCompletableDate(date: string, now: Date = new Date()): boolean {
-  const dateOnly = date.slice(0, 10);
-  return dateOnly === localDateOnly(now) || dateOnly === localDateOffset(-1, now);
-}

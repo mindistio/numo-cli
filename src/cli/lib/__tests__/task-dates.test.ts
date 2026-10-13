@@ -8,7 +8,6 @@ import {
   localDateOnly,
   localDateOffset,
   normalizeDueDateInBody,
-  isCompletableDate,
 } from '../task-dates';
 
 describe('localDateOnly', () => {
@@ -72,19 +71,5 @@ describe('normalizeDueDateInBody', () => {
     normalizeDueDateInBody(body);
     expect('dueDate' in body).toBe(false);
     expect('withTime' in body).toBe(false);
-  });
-});
-
-describe('isCompletableDate', () => {
-  const now = new Date(2026, 5, 19, 10, 0); // 2026-06-19 local
-  it('accepts today and yesterday', () => {
-    expect(isCompletableDate('2026-06-19', now)).toBe(true);
-    expect(isCompletableDate('2026-06-19 09:00', now)).toBe(true);
-    expect(isCompletableDate('2026-06-18', now)).toBe(true);
-  });
-
-  it('rejects tomorrow and older-than-yesterday', () => {
-    expect(isCompletableDate('2026-06-20', now)).toBe(false);
-    expect(isCompletableDate('2026-06-17', now)).toBe(false);
   });
 });
