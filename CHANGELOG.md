@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.3](https://github.com/mindistio/numo-cli/compare/v1.9.2...v1.9.3) (2026-10-13)
+
+
+### Bug Fixes
+
+* **tasks:** let the API decide completion dates; validate numeric options; accurate delete/uncomplete notices ([#26](https://github.com/mindistio/numo-cli/issues/26)) ([22fc6f7](https://github.com/mindistio/numo-cli/commit/22fc6f7bbc3d56f454917898e599c737fbd1d315))
+
 ## [1.9.2](https://github.com/mindistio/numo-cli/compare/v1.9.1...v1.9.2) (2026-10-13)
 
 
