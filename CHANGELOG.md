@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.9.2](https://github.com/mindistio/numo-cli/compare/v1.9.1...v1.9.2) (2026-10-13)
+
+
+### Bug Fixes
+
+* bump the plugin manifests with every release ([db47c19](https://github.com/mindistio/numo-cli/commit/db47c19ee414ca74bf8be8ba89ea22d2c518aa35))
+* bump the plugin manifests with every release ([a417230](https://github.com/mindistio/numo-cli/commit/a41723068733e0723ee305ea3d039598d5519302))
+
 ## [1.9.1](https://github.com/mindistio/numo-cli/compare/v1.9.0...v1.9.1) (2026-10-13)
 
 
