@@ -4,7 +4,7 @@
   "description": "CLI and programmatic API for Numo ADHD planner — create, complete, and manage tasks from the terminal or AI agents",
   "type": "module",
   "bin": {
-    "numo": "./dist/cli.cjs"
+    "numo": "dist/cli.cjs"
   },
   "files": [
     "dist/cli.cjs",
