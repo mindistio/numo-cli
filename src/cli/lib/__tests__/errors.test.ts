@@ -117,6 +117,7 @@ describe('commanderToCliError', () => {
   it.each([
     ['commander.unknownCommand', ErrorKind.INVALID_INPUT],
     ['commander.unknownOption', ErrorKind.INVALID_INPUT],
+    ['commander.excessArguments', ErrorKind.INVALID_INPUT],
     ['commander.missingArgument', ErrorKind.MISSING_ARGUMENT],
     ['commander.optionMissingArgument', ErrorKind.MISSING_ARGUMENT],
   ])('%s → %s / exit 2', (code, kind) => {
