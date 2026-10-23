@@ -228,6 +228,7 @@ export function classifyError(err: unknown): CliError {
 const COMMANDER_KIND: Record<string, ErrorKind> = {
   'commander.unknownCommand': ErrorKind.INVALID_INPUT,
   'commander.unknownOption': ErrorKind.INVALID_INPUT,
+  'commander.excessArguments': ErrorKind.INVALID_INPUT,
   'commander.missingArgument': ErrorKind.MISSING_ARGUMENT,
   'commander.optionMissingArgument': ErrorKind.MISSING_ARGUMENT,
   // A command group invoked without a subcommand reports itself as "help was shown".
