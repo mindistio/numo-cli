@@ -50,8 +50,8 @@
     "npm": ">=10"
   },
   "dependencies": {
-    "@clack/prompts": "1.1.0",
-    "chrono-node": "2.9.0",
+    "@clack/prompts": "1.8.1",
+    "chrono-node": "2.10.3",
     "commander": "12.1.0",
     "open": "10.2.0",
     "picocolors": "1.1.1"
@@ -59,9 +59,9 @@
   "devDependencies": {
     "@types/node": "22.19.15",
     "esbuild": "0.25.12",
-    "tsx": "4.22.4",
+    "tsx": "4.23.15",
     "typescript": "5.9.3",
-    "vitest": "4.1.9"
+    "vitest": "4.1.12"
   },
   "packageManager": "npm@11.11.0"
 }
