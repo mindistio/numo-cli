@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.4](https://github.com/mindistio/numo-cli/compare/v1.9.3...v1.9.4) (2026-10-23)
+
+
+### Bug Fixes
+
+* **cli:** reject excess positional arguments (commander 15) ([b71091a](https://github.com/mindistio/numo-cli/commit/b71091a6f996059897ef05ee0bacdaf25ea3a592))
+
 ## [1.9.3](https://github.com/mindistio/numo-cli/compare/v1.9.2...v1.9.3) (2026-10-13)
 
 
