@@ -47,6 +47,9 @@ numo tasks delete --stdin                              # Batch from pipe (NDJSON
 numo tasks complete <id> --date "2026-03-27 09:00"     # any past day; a routine only on a scheduled day
 numo tasks complete --stdin                            # Batch from pipe
 numo tasks uncomplete <historyId>
+numo tasks uncomplete <routineId> --date 2026-03-27     # reopen one day of a routine
+numo tasks skip <routineId> [--date tomorrow]          # skip a routine day; unskip to undo
+numo tasks restore <id>                                # bring back a deleted task
 
 # Community (read-only)
 numo posts list                                        # --cursor/--limit for pages
