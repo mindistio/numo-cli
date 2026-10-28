@@ -3,7 +3,7 @@ export type PostTag = 'general' | 'hack' | 'story' | 'meme' | 'other' | 'questio
 /** Day-of-week tokens as serialized by the Numo API. */
 export type WeekDay = 'Mon' | 'Tue' | 'Wed' | 'Thu' | 'Fri' | 'Sat' | 'Sun';
 
-/** Origin of a task: 'api', 'app', 'cli', or 'google-calendar'. */
+/** Origin of a task: 'api', 'app', 'cli', 'google-calendar', or 'siri'. */
 export type TaskSource = 'app' | 'cli' | 'google-calendar' | 'api' | 'siri';
 
 /** Difficulty levels (S/M/L/XL); null when unset. */

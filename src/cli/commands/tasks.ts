@@ -730,7 +730,7 @@ Examples:
         spinnerMessage: 'Uncompleting task...',
         onInteractive: (data: TaskUncompleteResponse) => {
           const arrow = SYM.undo;
-          if (data.alreadyOpen) {
+          if (date && data.alreadyOpen) {
             console.log(`\n  ${pc.dim(`${arrow} Not completed on ${date}  ${data.task.text ?? taskId}`)}\n`);
             return;
           }

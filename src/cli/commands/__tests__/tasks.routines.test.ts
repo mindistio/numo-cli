@@ -7,6 +7,7 @@ vi.mock('../../services/tasks', () => ({
   uncompleteOccurrence: vi.fn(), restoreTask: vi.fn(), skipOccurrence: vi.fn(), unskipOccurrence: vi.fn(),
 }));
 vi.mock('../../lib/uid', () => ({ requireAuth: vi.fn() }));
+vi.mock('../../lib/stdin', () => ({ readStdinLines: vi.fn(() => []) }));
 vi.mock('../../lib/tty', () => ({ isInteractive: vi.fn(() => false), isUnicodeSupported: false }));
 vi.mock('../../lib/prompts', () => ({
   promptText: vi.fn(), promptPassword: vi.fn(), promptSelect: vi.fn(),
@@ -15,7 +16,8 @@ vi.mock('../../lib/prompts', () => ({
 }));
 
 import { registerTasksCommands } from '../tasks';
-import { createTask, uncompleteTask, uncompleteOccurrence, skipOccurrence, unskipOccurrence } from '../../services/tasks';
+import { createTask, uncompleteTask, uncompleteOccurrence, restoreTask, skipOccurrence, unskipOccurrence } from '../../services/tasks';
+import { readStdinLines } from '../../lib/stdin';
 import { localDateOnly } from '../../lib/task-dates';
 
 function run(args: string[]) {
@@ -35,6 +37,7 @@ beforeEach(() => {
   vi.mocked(uncompleteOccurrence).mockResolvedValue({ uncompleted: true, task, karmaReverted: false } as never);
   vi.mocked(skipOccurrence).mockResolvedValue({ skipped: true, task } as never);
   vi.mocked(unskipOccurrence).mockResolvedValue({ unskipped: true, task } as never);
+  vi.mocked(restoreTask).mockResolvedValue({ restored: true, task, isHistoryTask: false } as never);
 });
 
 // Contract: a task created from the CLI is recorded as created from the CLI.
@@ -45,10 +48,11 @@ it('tasks create sends source: cli', async () => {
 
 describe('tasks skip / unskip', () => {
   it('acts on today in the local zone when --date is absent', async () => {
+    const today = localDateOnly();
     await run(['skip', 'r1', '--json']);
     await run(['unskip', 'r1', '--json']);
-    expect(skipOccurrence).toHaveBeenCalledWith('r1', localDateOnly());
-    expect(unskipOccurrence).toHaveBeenCalledWith('r1', localDateOnly());
+    expect(skipOccurrence).toHaveBeenCalledWith('r1', today);
+    expect(unskipOccurrence).toHaveBeenCalledWith('r1', today);
   });
 
   it('passes --date through as a calendar day', async () => {
@@ -74,5 +78,28 @@ describe('tasks uncomplete', () => {
     await run(['uncomplete', 'r1', '--date', '2026-03-26', '--json']);
     expect(uncompleteOccurrence).toHaveBeenCalledWith('r1', '2026-03-26');
     expect(uncompleteTask).not.toHaveBeenCalled();
+  });
+
+  it('with --date and --stdin reopens that day for every id', async () => {
+    vi.mocked(readStdinLines).mockReturnValue(['r1', 'r2']);
+    await run(['uncomplete', '--stdin', '--date', '2026-03-26']);
+    expect(uncompleteOccurrence).toHaveBeenCalledTimes(2);
+    expect(uncompleteOccurrence).toHaveBeenNthCalledWith(1, 'r1', '2026-03-26');
+    expect(uncompleteOccurrence).toHaveBeenNthCalledWith(2, 'r2', '2026-03-26');
+    expect(uncompleteTask).not.toHaveBeenCalled();
+  });
+});
+
+describe('tasks restore', () => {
+  it('restores the given id', async () => {
+    await run(['restore', 'abc', '--json']);
+    expect(restoreTask).toHaveBeenCalledWith('abc');
+  });
+
+  it('restores every id from --stdin', async () => {
+    vi.mocked(readStdinLines).mockReturnValue(['a', 'b']);
+    await run(['restore', '--stdin']);
+    expect(restoreTask).toHaveBeenCalledTimes(2);
+    expect(restoreTask).toHaveBeenNthCalledWith(2, 'b');
   });
 });
