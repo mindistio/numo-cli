@@ -4,7 +4,7 @@ import { runGet, runList, runCreate, runWrite } from '../lib/actions';
 import { printRecord, printNdjsonLine } from '../lib/output';
 import { randomUUID } from 'node:crypto';
 import { requireAuth } from '../lib/uid';
-import { listTasks, getTask, createTask, updateTask, deleteTask, completeTask, uncompleteTask } from '../services/tasks';
+import { listTasks, getTask, createTask, updateTask, deleteTask, completeTask, uncompleteTask, uncompleteOccurrence, restoreTask, skipOccurrence, unskipOccurrence } from '../services/tasks';
 import { formatDate, formatTags, formatDifficulty, formatDuration, formatRepeat, truncate, formatWeekdayHeader, formatKarmaGain, formatProgressSummary, formatTagsSummary } from '../lib/format';
 import { promptForMissing, promptText, promptConfirm, promptSelect, promptMultiSelect } from '../lib/prompts';
 import { isInteractive } from '../lib/tty';
@@ -15,7 +15,7 @@ import { localDateOnly, localDateOffset, normalizeDueDateInBody } from '../lib/t
 import { buildRepeatConfig, parseMonthDays } from '../lib/task-repeat';
 import { buildSubtasks } from '../lib/task-subtasks';
 import { readStdinLines } from '../lib/stdin';
-import type { ApiTask, TaskListResponse, TaskCreateResponse, TaskUpdateResponse, TaskDeleteResponse, TaskCompleteResponse, TaskUncompleteResponse } from '../types/api';
+import type { ApiTask, TaskListResponse, TaskCreateResponse, TaskUpdateResponse, TaskDeleteResponse, TaskCompleteResponse, TaskUncompleteResponse, TaskRestoreResponse, TaskSkipResponse, TaskUnskipResponse } from '../types/api';
 
 /** Commander collector for a repeatable option — accumulates each occurrence into an array. */
 function collectValue(value: string, previous: string[]): string[] {
@@ -56,7 +56,10 @@ async function pickTask(id: string | undefined, actionName: string): Promise<str
 }
 
 function resolveDate(opts: Record<string, unknown>): string | undefined {
-  if (opts.backlog) return undefined;
+  return opts.backlog ? undefined : resolveDay(opts);
+}
+
+function resolveDay(opts: Record<string, unknown>): string {
   // Local calendar day to match the API's "today" basis.
   if (opts.yesterday) return localDateOffset(-1);
   if (opts.tomorrow) return localDateOffset(1);
@@ -440,6 +443,7 @@ Examples:
       // Always send an idempotency key so a retried create (network timeout / 5xx) returns
       // the existing task instead of duplicating it.
       body.clientTaskId = opts.clientTaskId ?? randomUUID();
+      body.source = 'cli';
       // Always insert new tasks at the top of the list.
       body.listPosition = 'top';
       // Canonicalize dueDate to the 'YYYY-MM-DD HH:mm' wire format.
@@ -627,7 +631,7 @@ Examples:
         onInteractive: (data: TaskDeleteResponse) => {
           const cross = pc.red(SYM.cross);
           console.log(`\n  ${cross} Deleted  ${data.taskText || taskId}`);
-          if (data.archived) console.log(`    ${pc.dim('Archived')}`);
+          if (data.archived) console.log(`    ${pc.dim(`Archived — undo with: numo tasks restore ${taskId}`)}`);
           if (data.partial) printPartialNotice(data.failed);
           console.log('');
         },
@@ -696,16 +700,19 @@ Examples:
   tasks
     .command('uncomplete [id]')
     .description('Mark task as incomplete')
+    .option('--date <date>', 'Reopen this day of a routine (YYYY-MM-DD or natural language); the id is then the routine id')
     .option('--stdin', 'Read task IDs from stdin (one per line)')
     .action(async function (this: Command, id?: string) {
       const opts = this.optsWithGlobals();
       requireAuth();
+      const date = opts.date ? resolveDay({ date: opts.date }) : undefined;
+      const uncomplete = (taskId: string) => (date ? uncompleteOccurrence(taskId, date) : uncompleteTask(taskId));
 
       if (opts.stdin) {
         const ids = readStdinLines();
         for (const lineId of ids) {
           try {
-            const result = await uncompleteTask(lineId);
+            const result = await uncomplete(lineId);
             printNdjsonLine({ id: lineId, ...result });
           } catch (err: any) {
             process.exitCode = ExitCode.GENERAL;
@@ -718,11 +725,15 @@ Examples:
       const taskId = await promptForMissing({ value: id, message: 'Task ID' });
       await runWrite({
         global: opts,
-        fn: () => uncompleteTask(taskId),
+        fn: () => uncomplete(taskId),
         dataKey: 'task',
         spinnerMessage: 'Uncompleting task...',
         onInteractive: (data: TaskUncompleteResponse) => {
           const arrow = SYM.undo;
+          if (date && data.alreadyOpen) {
+            console.log(`\n  ${pc.dim(`${arrow} Not completed on ${date}  ${data.task.text ?? taskId}`)}\n`);
+            return;
+          }
           console.log(`\n  ${pc.yellow(arrow)} Reverted  ${data.task.text ?? taskId}`);
           // No karmaReverted: the day was already open, so there was no karma to take back.
           if (data.karmaReverted) console.log(`    ${pc.dim('Karma adjustment applied')}`);
@@ -733,5 +744,102 @@ Examples:
     })
     .addHelpText('after', `
 Examples:
-  $ numo tasks uncomplete abc123-1711500000000`);
+  $ numo tasks uncomplete abc123-1711500000000
+  $ numo tasks uncomplete <routineId> --date 2026-03-26   # Reopen one day of a routine`);
+
+  tasks
+    .command('restore [id]')
+    .description('Bring back a deleted task')
+    .option('--stdin', 'Read task IDs from stdin (one per line)')
+    .action(async function (this: Command, id?: string) {
+      const opts = this.optsWithGlobals();
+      requireAuth();
+
+      if (opts.stdin) {
+        const ids = readStdinLines();
+        for (const lineId of ids) {
+          try {
+            const result = await restoreTask(lineId);
+            printNdjsonLine({ id: lineId, ...result });
+          } catch (err: any) {
+            process.exitCode = ExitCode.GENERAL;
+            printNdjsonLine({ id: lineId, error: err.message });
+          }
+        }
+        return;
+      }
+
+      const taskId = await promptForMissing({ value: id, message: 'Task ID' });
+      await runWrite({
+        global: opts,
+        fn: () => restoreTask(taskId),
+        dataKey: 'task',
+        spinnerMessage: 'Restoring task...',
+        onInteractive: (data: TaskRestoreResponse) => {
+          const note = data.alreadyRestored ? pc.dim('  (already restored)') : '';
+          console.log(`\n  ${pc.green(SYM.undo)} Restored  ${data.task.text ?? taskId}${note}\n`);
+        },
+      });
+    })
+    .addHelpText('after', `
+Examples:
+  $ numo tasks restore abc123
+  $ numo tasks restore abc123 --json`);
+
+  tasks
+    .command('skip [id]')
+    .description('Skip one day of a routine')
+    .option('--date <date>', 'Day to skip: YYYY-MM-DD or natural language (default: today)')
+    .action(async function (this: Command, id?: string) {
+      const opts = this.optsWithGlobals();
+      requireAuth();
+      const date = resolveDay({ date: opts.date });
+      const taskId = await promptForMissing({ value: id, message: 'Routine ID' });
+      await runWrite({
+        global: opts,
+        fn: () => skipOccurrence(taskId, date),
+        dataKey: 'task',
+        spinnerMessage: 'Skipping...',
+        onInteractive: (data: TaskSkipResponse) => {
+          if (data.alreadyClosed) {
+            console.log(`\n  ${pc.dim(`${SYM.dash} Already done or skipped on ${date}  ${data.task.text ?? taskId}`)}\n`);
+          } else {
+            console.log(`\n  ${pc.yellow(SYM.dash)} Skipped  ${data.task.text ?? taskId}  ${pc.dim(date)}\n`);
+          }
+        },
+      });
+    })
+    .addHelpText('after', `
+Examples:
+  $ numo tasks skip <routineId>                 # Skip today
+  $ numo tasks skip <routineId> --date tomorrow
+  $ numo tasks unskip <routineId>               # Undo`);
+
+  tasks
+    .command('unskip [id]')
+    .description('Undo a skipped day of a routine')
+    .option('--date <date>', 'Skipped day: YYYY-MM-DD or natural language (default: today)')
+    .action(async function (this: Command, id?: string) {
+      const opts = this.optsWithGlobals();
+      requireAuth();
+      const date = resolveDay({ date: opts.date });
+      const taskId = await promptForMissing({ value: id, message: 'Routine ID' });
+      await runWrite({
+        global: opts,
+        fn: () => unskipOccurrence(taskId, date),
+        dataKey: 'task',
+        spinnerMessage: 'Undoing skip...',
+        onInteractive: (data: TaskUnskipResponse) => {
+          if (data.alreadyOpen) {
+            console.log(`\n  ${pc.dim(`${SYM.undo} Not skipped on ${date}  ${data.task.text ?? taskId}`)}\n`);
+          } else {
+            console.log(`\n  ${pc.yellow(SYM.undo)} Unskipped  ${data.task.text ?? taskId}  ${pc.dim(date)}\n`);
+          }
+        },
+      });
+    })
+    .addHelpText('after', `
+Examples:
+  $ numo tasks unskip <routineId>
+  $ numo tasks unskip <routineId> --date 2026-03-26`);
 }

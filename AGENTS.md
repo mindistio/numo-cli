@@ -184,9 +184,19 @@ numo tasks complete <taskId> --json
 
 # Uncomplete (restore from history)
 numo tasks uncomplete <historyId> --json
+# …or reopen one day of a routine by its id
+numo tasks uncomplete <routineId> --date 2026-04-03 --json
 
-# Delete a task (archives it)
+# Skip one day of a routine, and undo it (--date defaults to today)
+numo tasks skip <routineId> --date tomorrow --json
+# → {"skipped":true,"task":{...}}; "alreadyClosed":true when that day was already done or skipped
+numo tasks unskip <routineId> --date tomorrow --json
+# → {"unskipped":true,"task":{...}}; "alreadyOpen":true when that day was not skipped
+
+# Delete a task (archives it), and bring it back
 numo tasks delete <taskId> --json
+numo tasks restore <taskId> --json
+# → {"restored":true,"task":{...},"isHistoryTask":false}
 ```
 
 ### Recurring reminders (natural-language requests)

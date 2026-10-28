@@ -17,6 +17,8 @@ const OPTION_ENUMS: Record<string, ReadonlyArray<string | number>> = {
 export const REQUIRED_WITHOUT_TTY: Record<string, readonly string[]> = {
   'tasks get': ['id'],
   'tasks update': ['id'],
+  'tasks skip': ['id'],
+  'tasks unskip': ['id'],
   'posts get': ['id'],
   'posts comments': ['postId'],
   'posts replies': ['postId', 'commentId'],
@@ -27,6 +29,7 @@ export const ARG_ALTERNATIVES: Record<string, Record<string, readonly string[]>>
   'tasks delete': { id: ['--stdin'] },
   'tasks complete': { id: ['--stdin'] },
   'tasks uncomplete': { id: ['--stdin'] },
+  'tasks restore': { id: ['--stdin'] },
 };
 
 export function buildCommandSchema(cmd: Command, fullName: string): Record<string, unknown> {
