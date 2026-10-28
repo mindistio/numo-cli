@@ -9,11 +9,12 @@ vi.mock('../../lib/api-client', () => ({
   },
 }));
 
-import { listTasks, completeTask } from '../tasks';
+import { listTasks, completeTask, restoreTask, skipOccurrence, unskipOccurrence, uncompleteOccurrence } from '../tasks';
 import { api } from '../../lib/api-client';
 
 const mockGet = vi.mocked(api.get);
 const mockPost = vi.mocked(api.post);
+const mockDel = vi.mocked(api.del);
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -51,5 +52,25 @@ describe('completeTask', () => {
     await completeTask('task-1', '2024-01-15');
 
     expect(mockPost).toHaveBeenCalledWith('/api/tasks/task-1/complete', { date: '2024-01-15' });
+  });
+});
+
+// Contract: each routine-day action reaches its own route, with the id escaped.
+describe('routine day and restore routes', () => {
+  it('restoreTask posts to the restore route', async () => {
+    await restoreTask('a/b');
+    expect(mockPost).toHaveBeenCalledWith('/api/tasks/a%2Fb/restore');
+  });
+
+  it('skipOccurrence posts and unskipOccurrence deletes the same day', async () => {
+    await skipOccurrence('r1', '2026-03-26');
+    await unskipOccurrence('r1', '2026-03-26');
+    expect(mockPost).toHaveBeenCalledWith('/api/tasks/r1/occurrences/2026-03-26/skip');
+    expect(mockDel).toHaveBeenCalledWith('/api/tasks/r1/occurrences/2026-03-26/skip');
+  });
+
+  it('uncompleteOccurrence posts to that day', async () => {
+    await uncompleteOccurrence('r1', '2026-03-26');
+    expect(mockPost).toHaveBeenCalledWith('/api/tasks/r1/occurrences/2026-03-26/uncomplete');
   });
 });

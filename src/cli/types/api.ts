@@ -4,7 +4,7 @@ export type PostTag = 'general' | 'hack' | 'story' | 'meme' | 'other' | 'questio
 export type WeekDay = 'Mon' | 'Tue' | 'Wed' | 'Thu' | 'Fri' | 'Sat' | 'Sun';
 
 /** Origin of a task: 'api', 'app', 'cli', or 'google-calendar'. */
-export type TaskSource = 'app' | 'cli' | 'google-calendar' | 'api';
+export type TaskSource = 'app' | 'cli' | 'google-calendar' | 'api' | 'siri';
 
 /** Difficulty levels (S/M/L/XL); null when unset. */
 export type TaskDifficulty = 0 | 1 | 2 | 3;
@@ -93,9 +93,34 @@ export interface TaskUncompleteResponse {
   uncompleted: true;
   task: ApiTask;
   karmaReverted: boolean;
+  /** True when that routine day was not completed — nothing to reopen. */
+  alreadyOpen?: boolean;
   /** Set when a non-critical side effect (karma/progress/counter/ordering) failed but the uncomplete committed. */
   partial?: boolean;
   failed?: string[];
+}
+
+export interface TaskRestoreResponse {
+  restored: true;
+  task: ApiTask;
+  /** True when the restored record is a completed task rather than an open one. */
+  isHistoryTask: boolean;
+  /** True when the task was already back — idempotent retry. */
+  alreadyRestored?: boolean;
+}
+
+export interface TaskSkipResponse {
+  skipped: true;
+  task: ApiTask;
+  /** True when that day was already completed or skipped — nothing changed. */
+  alreadyClosed?: boolean;
+}
+
+export interface TaskUnskipResponse {
+  unskipped: true;
+  task: ApiTask;
+  /** True when that day was not skipped — nothing changed. */
+  alreadyOpen?: boolean;
 }
 
 export interface ApiPost {

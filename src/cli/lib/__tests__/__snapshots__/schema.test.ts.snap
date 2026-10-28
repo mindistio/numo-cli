@@ -375,10 +375,79 @@ exports[`schemaVersion > travels with the payload it describes 1`] = `
       "name": "tasks uncomplete",
       "options": [
         {
+          "description": "Reopen this day of a routine (YYYY-MM-DD or natural language); the id is then the routine id",
+          "flags": "--date <date>",
+          "required": false,
+          "type": "string",
+        },
+        {
           "description": "Read task IDs from stdin (one per line)",
           "flags": "--stdin",
           "required": false,
           "type": "boolean",
+        },
+      ],
+    },
+    {
+      "arguments": [
+        {
+          "alternatives": [
+            "--stdin",
+          ],
+          "description": "",
+          "name": "id",
+          "required": false,
+          "variadic": false,
+        },
+      ],
+      "description": "Bring back a deleted task",
+      "name": "tasks restore",
+      "options": [
+        {
+          "description": "Read task IDs from stdin (one per line)",
+          "flags": "--stdin",
+          "required": false,
+          "type": "boolean",
+        },
+      ],
+    },
+    {
+      "arguments": [
+        {
+          "description": "",
+          "name": "id",
+          "required": true,
+          "variadic": false,
+        },
+      ],
+      "description": "Skip one day of a routine",
+      "name": "tasks skip",
+      "options": [
+        {
+          "description": "Day to skip: YYYY-MM-DD or natural language (default: today)",
+          "flags": "--date <date>",
+          "required": false,
+          "type": "string",
+        },
+      ],
+    },
+    {
+      "arguments": [
+        {
+          "description": "",
+          "name": "id",
+          "required": true,
+          "variadic": false,
+        },
+      ],
+      "description": "Undo a skipped day of a routine",
+      "name": "tasks unskip",
+      "options": [
+        {
+          "description": "Skipped day: YYYY-MM-DD or natural language (default: today)",
+          "flags": "--date <date>",
+          "required": false,
+          "type": "string",
         },
       ],
     },
