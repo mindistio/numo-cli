@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.10.0](https://github.com/mindistio/numo-cli/compare/v1.9.4...v1.10.0) (2026-10-28)
+
+
+### Features
+
+* **tasks:** restore, skip/unskip routine days, uncomplete a routine day ([#30](https://github.com/mindistio/numo-cli/issues/30)) ([a778d4d](https://github.com/mindistio/numo-cli/commit/a778d4da4648f51604cfbb5a336fa2cad877a6ea))
+
 ## [1.9.4](https://github.com/mindistio/numo-cli/compare/v1.9.3...v1.9.4) (2026-10-23)
 
 
