@@ -4,6 +4,9 @@ Entry point for Claude Code working in this repo. It links out rather than dupli
 
 **numo-cli** is a Commander.js CLI (`numo`) for the Numo planner — a pure HTTP client to the Numo API (`NUMO_API_URL`). TTY users get tables/colors; pipes and agents get JSON.
 
+## Public repo
+This repo and the npm package are public, and release-please turns commit messages into the public CHANGELOG. Commit messages, PR titles and descriptions, branch names, code comments and test names say only what changed for CLI users: no ticket IDs, no internal details, no security reasoning. Keep PR descriptions to a few lines.
+
 ## Where things live
 - `src/cli/cli.ts` — program + global flags (`--json`, `-q/--quiet`) and discovery (`commands`, `schema`, `guide`/`agents`, `completion`); `guide` prints `AGENTS.md`, inlined into the bundle at build time via `lib/guide.ts`
 - `src/cli/commands/` — command registration (`register*Commands(program)`)
