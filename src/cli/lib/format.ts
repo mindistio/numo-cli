@@ -106,3 +106,22 @@ export function formatTagsSummary(tasks: { tags?: string[] }[]): string {
   if (entries.length === 0) return '';
   return entries.map(([tag, count]) => `${pc.cyan('#' + tag)}${pc.dim('(' + count + ')')}`).join('  ');
 }
+
+/**
+ * Strip C0/C1 control chars (ESC, BEL, CR, 0x9b CSI, 0x9d OSC ...) except \n and \t,
+ * so text from the server prints as plain text. With ESC gone no escape sequence can
+ * start; any leftover printable tail is inert.
+ */
+export function stripControl(s: string): string {
+  return s.replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, '');
+}
+
+/** stripControl over every string in a payload (for human output only, never --json). */
+export function stripControlDeep<T>(v: T): T {
+  if (typeof v === 'string') return stripControl(v) as T;
+  if (Array.isArray(v)) return v.map(stripControlDeep) as T;
+  if (v && typeof v === 'object') {
+    return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, stripControlDeep(x)])) as T;
+  }
+  return v;
+}

@@ -1,3 +1,4 @@
+import { stripControl } from './format';
 export enum ErrorKind {
   AUTH_REQUIRED = 'AUTH_REQUIRED',
   AUTH_EXPIRED = 'AUTH_EXPIRED',
@@ -254,7 +255,7 @@ export function commanderToCliError(err: unknown): CliError {
 }
 
 export function sanitizeErrorMessage(msg: string): string {
-  return msg
+  return stripControl(msg)
     .replace(/https?:\/\/\S+/g, '<url>')
     .replace(/\/(?:Users|home|var|tmp)\/\S+/g, '<path>')
     .replace(/\beyJ[\w-]+\.[\w-]+\.[\w-]+\b/g, '<jwt>')

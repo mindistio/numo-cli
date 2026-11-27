@@ -1,6 +1,7 @@
 import { printTable, printJson, outputResult, outputError, selectFields, selectRecordFields } from './output';
 import { withSpinner } from './spinner';
 import { isQuietMode } from './quiet';
+import { stripControlDeep } from './format';
 
 export interface GlobalOpts {
   json?: boolean | string;
@@ -26,9 +27,9 @@ export async function runGet<T>(opts: {
     if (useJson(opts.global)) {
       printJson(selectRecordFields(result, opts.global.json));
     } else if (opts.onInteractive) {
-      opts.onInteractive(result);
+      opts.onInteractive(stripControlDeep(result));
     } else {
-      outputResult(result as Record<string, unknown>, false);
+      outputResult(stripControlDeep(result) as Record<string, unknown>, false);
     }
   } catch (err) {
     outputError(err, useJson(opts.global));
@@ -53,12 +54,12 @@ export async function runList<T>(opts: {
     if (useJson(opts.global)) {
       printJson(selectFields(payload, opts.global.json, opts.dataKey));
     } else if (opts.onInteractive) {
-      opts.onInteractive(payload);
+      opts.onInteractive(stripControlDeep(payload));
     } else {
-      const items = (payload as Record<string, unknown>)[opts.dataKey];
+      const items = stripControlDeep((payload as Record<string, unknown>)[opts.dataKey]);
       printTable(items as Record<string, unknown>[], opts.columns);
       if ((payload as Record<string, unknown>).nextCursor) {
-        console.log(`\nNext cursor: ${(payload as Record<string, unknown>).nextCursor}`);
+        console.log(`\nNext cursor: ${stripControlDeep((payload as Record<string, unknown>).nextCursor)}`);
       }
     }
   } catch (err) {
@@ -85,12 +86,12 @@ export async function runCreate<T>(opts: {
     if (useJson(opts.global)) {
       printJson(selectFields(payload, opts.global.json, opts.dataKey));
     } else if (opts.onInteractive) {
-      opts.onInteractive(item, payload);
+      opts.onInteractive(stripControlDeep(item), stripControlDeep(payload));
     } else {
       if (opts.successMessage) {
-        console.log(opts.successMessage(item));
+        console.log(opts.successMessage(stripControlDeep(item)));
       }
-      outputResult(item, false);
+      outputResult(stripControlDeep(item), false);
     }
   } catch (err) {
     outputError(err, useJson(opts.global));
@@ -116,11 +117,11 @@ export async function runWrite<T>(opts: {
     if (useJson(opts.global)) {
       printJson(selectFields(payload, opts.global.json, opts.dataKey));
     } else if (opts.onInteractive) {
-      opts.onInteractive(payload);
+      opts.onInteractive(stripControlDeep(payload));
     } else {
       if (opts.successMessage) console.log(opts.successMessage);
       if (item && Object.keys(item).length > 0) {
-        outputResult(item, false);
+        outputResult(stripControlDeep(item), false);
       }
     }
   } catch (err) {
